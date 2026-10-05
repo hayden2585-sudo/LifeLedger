@@ -8,9 +8,19 @@
 </head>
 <body>
 <header class="top">
-  <div class="brand"><span class="logo">▦</span> LifeLedger <span class="tag">expense &amp; income spreadsheet</span></div>
+  <div class="brand"><span class="logo">▦</span>
+    <span class="brandtext"><span class="brandname" id="brandName">LifeLedger</span>
+    <span class="tag" id="brandTag">expense &amp; income spreadsheet</span></span>
+  </div>
   <div class="top-actions">
     <span id="saveBadge" class="badge">…</span>
+    <span class="naming">
+      <input type="text" id="ledgerNameInput" maxlength="60" placeholder="Ledger name"
+             title="Name this ledger — used for its title and its export filenames"
+             onkeydown="if(event.key==='Enter'){event.preventDefault();renameLedger()}"
+             onblur="if(this.value.trim()!==ledgerName())renameLedger()">
+      <button type="button" onclick="renameLedger()" title="Save the name">✔</button>
+    </span>
     <select id="currencySel" title="Currency" onchange="setCurrency(this.value)"></select>
     <div class="menu">
       <button onclick="toggleMenu(event)">Data ▾</button>
@@ -19,6 +29,8 @@
         <button onclick="exportGridCSV()">⬇️ Export annual grid (CSV)</button>
         <button onclick="exportJSON()">⬇️ Export backup (JSON)</button>
         <button onclick="importJSONClick()">⬆️ Import backup (JSON)</button>
+        <hr>
+        <button onclick="closeMenu();showPrivacyNotice()">🔒 Privacy &amp; data — how this is stored</button>
         <hr>
         <button onclick="loadSample()">🎲 Load sample data</button>
         <button onclick="clearSample()">🧹 Clear sample data</button>

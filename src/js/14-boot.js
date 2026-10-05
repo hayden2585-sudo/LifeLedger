@@ -17,5 +17,5 @@
   bootTimeDefaults();
   renderAll();
   showView('dash');
-  showStorageWarning();   /* IMPROVEMENT 1 — block-and-acknowledge if storage is unavailable */
+  bootNotices();   /* storage-loss warning (1.4.0), else the privacy notice (1.4.2) */
 })();

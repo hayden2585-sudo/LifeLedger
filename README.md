@@ -57,7 +57,7 @@ lifeledger/
 │   ├── package.json
 │   └── www/                   ← web assets (from `npm run build`)
 ├── tools/gen-icons.mjs        ← regenerates the PNG icon set (pure Node)
-└── tests/                     ← jsdom suites (191 checks) · `npm test`
+└── tests/                     ← jsdom suites (228 checks) · `npm test`
 ```
 
 ## 2 · Quick start (no installation)
@@ -140,11 +140,37 @@ Because storage is per-origin/per-device, the JSON backup (Data ▸ Export/Impor
 is the way to move data between devices. **In the in-app file preview here, storage does
 not persist — export before closing.**
 
+### Naming your ledger
+A new install is named for you — from your household once contributors exist
+("Hayden & Simone"), "Sample household ledger" while the demo data is loaded, or a
+plain "My ledger" otherwise. The name appears in the browser tab, the header and your
+export filenames (`boodoosingh-household-2026-backup-2026-10-05.json`). Rename it with
+the ✎ field in the header; clearing the field reverts to the derived name. A custom
+name is saved in your backup and is never overwritten by the automatic derivation.
+
+### Encryption and privacy — stated plainly
+**LifeLedger does not encrypt your data.** Entries are stored as readable text in the
+browser's local storage, and exported JSON/CSV backups are plain, unprotected files.
+There is no account, password or login, so there is **no logon step** at which anything
+could be unlocked or verified. `Data ▸ Privacy & data` repeats this in-app, and it is
+shown once on a new install.
+
+What that means in practice:
+
+- Anyone who can use this device or sign in to this computer account, anyone using this
+  browser profile, and anyone you send a backup to **can read every figure**.
+- On a shared, family or work computer, treat the ledger as legible to others.
+- Protect it yourself: lock the device, use a dedicated browser profile for finances,
+  and keep backups somewhere you control. For at-rest secrecy, put the backup inside an
+  encrypted volume or password-protected archive — the app cannot do it for you.
+- Clearing browser data, uninstalling, or **Data ▸ Reset everything** deletes the ledger
+  permanently. Export a JSON backup first; nothing can recover it afterwards.
+
 ## 6 · Development & tests
 
 ```bash
 npm install        # jsdom (dev-only)
-npm test           # 191 jsdom checks against web/lifeledger.html
+npm test           # 228 jsdom checks against web/lifeledger.html
 node tools/gen-icons.mjs   # regenerate icon PNGs after changing the logo logic
 node server.mjs    # serve PWA at http://127.0.0.1:8080
 ```
@@ -172,7 +198,7 @@ subtypes for salary/wages, side hustles, salary arrears, overtime/extra duties, 
 sale of assets, gratuity, welfare benefits, rental income, and gifts/remittances (including
 money sent from abroad).
 
-**Status:** release 1.4.1 corrects the trailing-12 average denominator, makes the project budget field honest\nand stops non-monthly fixed costs being reported as overspending. 1.4.0 added the proactive alerts panel,\ndata health check, year-over-year comparison, household spending split, project archive lifecycle and the\nstorage-loss warning. See the changelog.
+**Status:** release 1.4.2 adds named ledgers and an honest privacy notice. 1.4.1 corrected the trailing-12 average denominator, makes the project budget field honest\nand stops non-monthly fixed costs being reported as overspending. 1.4.0 added the proactive alerts panel,\ndata health check, year-over-year comparison, household spending split, project archive lifecycle and the\nstorage-loss warning. See the changelog.
 
 **Disclaimer:** educational tool — not financial, tax or investment advice.
 
@@ -183,6 +209,31 @@ GitHub is intended to become the canonical source and release store. The applica
 The important separation is: **GitHub distributes application code; each device retains authority over its own financial data.** User backups, local storage and credentials are never part of the application repository.
 
 ## 9 · Changelog
+
+**1.4.2** — named ledgers and an honest privacy notice
+- **Your ledger now has a name.** Previously the workspace was anonymous: nothing
+  identified whose figures you were looking at, every backup was `lifeledger-backup.json`,
+  and there was no way to rename any of it. A new install is now named automatically from
+  what the app already knows — the household ("Hayden & Simone"), "Sample household ledger"
+  while the demo is loaded, or "My ledger" otherwise — and it is renameable from the ✎ field
+  in the header. The name appears in the browser tab, the header, the sample-data banner and
+  your export filenames (`hayden-simone-backup-2026-10-05.json`), travels inside the backup,
+  and a name you set by hand is never overwritten by the automatic derivation. Clearing the
+  field reverts to the derived name.
+  - Existing installs keep their data and are **not** renamed: a save that predates this
+    release is treated as already-custom, so the derivation can never overwrite it.
+- **An honest privacy notice, because there was nothing before.** There is no encryption, no
+  account and no login anywhere in LifeLedger, so there was also no "logon reminder" — and a
+  reminder implying protection the app does not provide would be worse than silence. Instead:
+  a notice on first run, plus a permanent **Data ▸ Privacy & data** entry, stating that data
+  stays on the device, that it is **not encrypted**, that local storage and exported backups
+  are readable text, who can read them, how to protect them yourself, and that clearing
+  browser data or resetting deletes the ledger permanently. The README now says the same
+  rather than leaving it implied.
+  - Shown once on a genuinely new install; an existing save is not nagged with a notice it
+    never saw. If storage is unavailable the storage-loss warning takes precedence, so two
+    overlays never stack at startup.
+- Regression coverage grew from 191 to 228 jsdom checks.
 
 **1.4.1** — correctness fixes to the numbers every view reports
 - **Trailing-12 averages no longer divide by a hard 12.** Averages are now divided by the months that
@@ -243,7 +294,7 @@ The important separation is: **GitHub distributes application code; each device 
 - **CSV export keeps attribution**: `household_member`, `project`, `project_item` and `income_type` were
   previously stripped at export; they are now included, and a spend on a project that has since been
   archived still resolves its project name.
-- Regression coverage grew from 82 to 166 jsdom checks in 1.4.0, and to 191 in 1.4.1, including a new `tests/smoke4.cjs` suite for the
+- Regression coverage grew from 82 to 166 jsdom checks in 1.4.0, to 191 in 1.4.1 and to 228 in 1.4.2, including a new `tests/smoke4.cjs` suite for the
   six enhancements plus migration, archive and restore round-trips.
 **1.3.0** — household + projects expansion
 - Added a **Household** branch with contributor/member attribution for working couples, remote professionals, stay-at-home professionals and other household contributors.

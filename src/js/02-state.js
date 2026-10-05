@@ -19,7 +19,7 @@ function freshState(){
       nisPct:5.4, nisCeilingMonthly:13600, healthSurchargeWeekly:8.25, payrollDeductionPct:0,
       savingsTargetPct:10, emergencyMonths:4, businessMarginPct:35, minWageHourly:20.50 },
     streams:[], recurringExpenses:[], tx:[], budgets:{}, household:{members:[]}, projects:[],
-    meta:{ created:Date.now(), sample:false, init:true }
+    meta:{ created:Date.now(), sample:false, init:true, name:'', nameCustom:false, privacySeen:false }
   };
 }
 /* Bring settings from older saves up to the current schema.
@@ -38,6 +38,14 @@ function migrateWorkspace(s){
   if(!Array.isArray(s.household?.members)) s.household={members:[]};
   if(!Array.isArray(s.projects)) s.projects=[];
   if(!Array.isArray(s.recurringExpenses)) s.recurringExpenses=[];
+  /* workspace naming (1.4.2): a save with no meta.name is an EXISTING install, so
+     default nameCustom to true — the user's ledger is theirs and we must not start
+     overwriting it with a name derived from their household later. Newly created
+     workspaces come from freshState(), which sets these explicitly. */
+  if(!s.meta) s.meta={};
+  if(s.meta.name===undefined) s.meta.name='';
+  if(s.meta.nameCustom===undefined) s.meta.nameCustom=true;
+  if(s.meta.privacySeen===undefined) s.meta.privacySeen=true;
   for(const p of s.projects){
     if(!p.items||!Array.isArray(p.items)) p.items=[];
     if(!p.type) p.type='home';
@@ -180,6 +188,94 @@ function vendorFromEmail(fromLine){
   const m = String(fromLine).match(/<([^>]+)>/); const addr = m? m[1] : String(fromLine);
   const dom = (addr.split('@')[1]||'').split('.')[0];
   return dom? dom.charAt(0).toUpperCase()+dom.slice(1) : null;
+}
+
+/* ----------------------------------------------------------------
+   WORKSPACE NAMING  (1.4.2)
+   A user's data was previously anonymous — "the ledger" had no name
+   anywhere, so backups were all `lifeledger-backup.json` and nothing
+   identified whose figures you were looking at. The name is derived
+   from what the app already knows (the household) and is fully
+   renameable; a rename is preserved and never overwritten by the
+   derivation.
+---------------------------------------------------------------- */
+function firstNameOf(full){ return String(full||'').trim().split(/\s+/)[0]||'' }
+function derivedLedgerName(){
+  if(state.meta && state.meta.sample) return 'Sample household ledger';
+  const ms=(state.household?.members||[]).map(m=>firstNameOf(m.name)).filter(Boolean);
+  if(ms.length===1) return ms[0]+' household ledger';
+  if(ms.length===2) return ms[0]+' & '+ms[1];
+  if(ms.length>2) return ms[0]+' +'+(ms.length-1)+' others';
+  return 'My ledger';
+}
+function ledgerName(){
+  const m=state.meta||{};
+  const custom=String(m.name||'').trim();
+  return custom || derivedLedgerName();
+}
+function ledgerNameIsCustom(){ return !!String(state.meta?.name||'').trim() }
+function slugify(s){
+  return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,48) || 'lifeledger';
+}
+function ledgerFileStem(){ return ledgerNameIsCustom()? slugify(ledgerName()) : 'lifeledger' }
+/* set (or, with an empty value, clear back to the derived name) */
+function setLedgerName(v){
+  const clean=String(v||'').trim().slice(0,60);
+  state.meta.name=clean;
+  state.meta.nameCustom=!!clean;
+  store.save(); renderChrome(); refreshLedgerNameInputs();
+  toast(clean? 'Ledger renamed to “'+clean+'”' : 'Ledger name reset to “'+ledgerName()+'”');
+}
+function renameLedger(){ const i=$('ledgerNameInput'); if(i) setLedgerName(i.value) }
+
+/* ----------------------------------------------------------------
+   PRIVACY & DATA NOTICE  (1.4.2)
+   There is no login, no account and no encryption in LifeLedger, so
+   there can be no "logon reminder". This says only what is true:
+   the data is local, it is NOT encrypted, and a backup file is a
+   plain-text copy. Claiming protection the app does not provide
+   would be worse than saying nothing at all.
+---------------------------------------------------------------- */
+function showPrivacyNotice(){
+  if($('privacyModal')) return;
+  const m=document.createElement('div');
+  m.id='privacyModal';
+  m.setAttribute('role','dialog');
+  m.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.7);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto';
+  m.innerHTML=`<div style="background:#fff;border-radius:14px;padding:26px;max-width:600px;box-shadow:0 20px 50px rgba(0,0,0,.3)">
+    <div style="font-size:32px;margin-bottom:6px">🔒</div>
+    <h2 style="margin:0 0 4px;font-size:19px">Your data &amp; your privacy</h2>
+    <p class="mut small" style="margin:0 0 14px">How <b>${esc(ledgerName())}</b> is stored — stated plainly, including what is <b>not</b> protected.</p>
+    <div style="font-size:13.3px;line-height:1.65">
+      <p style="margin:0 0 8px"><b>✓ It stays on this device.</b> Everything lives in this browser's local storage for this app only. There is no server, no account, no sync and no tracking — LifeLedger never sends your figures anywhere.</p>
+      <p style="margin:0 0 8px;background:#fdf3e4;border:1px solid #f2d3a2;border-radius:8px;padding:10px 12px"><b>⚠ It is not encrypted.</b> Your entries are stored as readable text, as are the JSON backup files you export. There is no password protecting them.</p>
+      <p style="margin:0 0 8px"><b>Who can read it:</b> anyone who can use this device or sign in to this computer account, anyone using this browser profile, and anyone you send a backup file to. On a shared or work computer, treat it as legible to others.</p>
+      <p style="margin:0 0 8px"><b>Protect it yourself:</b> keep this device and computer account locked, use a separate browser profile for finances, and store backups somewhere you control. If you need at-rest secrecy, put the backup inside an encrypted volume or password-protected archive — the app cannot do it for you.</p>
+      <p style="margin:0 0 2px"><b>Clearing browser data, uninstalling, or “Reset everything” deletes the ledger permanently.</b> Nothing can recover it. Export a JSON backup first.</p>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
+      <button class="btn" onclick="ackPrivacy()">I understand — don't show this again</button>
+      <button class="btn ghost" onclick="document.getElementById('privacyModal').remove()">Close</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+function ackPrivacy(){
+  state.meta.privacySeen=true; store.save();
+  const m=$('privacyModal'); if(m) m.remove();
+}
+/* shown once on a genuinely new install; a save that predates the notice is left alone */
+function maybeShowPrivacyNotice(){
+  if(!state || !state.meta) return;
+  if(state.meta.privacySeen===true) return;
+  showPrivacyNotice();
+}
+/* One overlay at a time at startup: if storage is unavailable that warning comes
+   first (it is the more urgent fact), and the privacy notice is deferred rather
+   than stacked on top of it. */
+function bootNotices(){
+  if(!store.ok){ showStorageWarning(); return }
+  maybeShowPrivacyNotice();
 }
 
 /* ----------------------------------------------------------------

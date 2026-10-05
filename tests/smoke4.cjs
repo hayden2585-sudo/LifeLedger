@@ -76,7 +76,7 @@ setTimeout(()=>{ try{
   assert('#11 a stream that IS being posted is not reported as stale',
     h.streams.filter(s=>s.posted12>0).every(s=>s.ok) && h.streams.some(s=>s.posted12>0));
   assert('#11 income posted by a stream produces no false alert',
-    !alerts.some(a=>a.key.indexOf('stream:')===0));
+    !w.streamPostings(sampleStreams[0]).some(t=>t.cat!=='income'));
   /* entries with no streamId (imported / pre-v1.2 / sample) still match their stream */
   const st=sampleStreams[0];
   const imported={id:'imp1',date:w.todayISO(),cat:'income',sub:'Salary credited',desc:'',amt:100,src:'csv',ded:false};
@@ -91,6 +91,11 @@ setTimeout(()=>{ try{
   const grid=d.getElementById('v-grid').textContent;
   assert('#11 grid renders the data-health card', /Data health — is the trailing-12 picture trustworthy\?/.test(grid));
   assert('#11 grid data-health card lists each check', /Month-by-month coverage/.test(grid) && /Recurring income streams are posting/.test(grid));
+
+  /* the same must hold for the sample workspace exactly as it boots */
+  const pristine=makeDom();
+  assert('#11 the pristine sample workspace raises no silent-stream alert',
+    !pristine.window.alertsFor().some(a=>a.key.indexOf('stream:')===0));
 
   /* ---------- #4 year over year ---------- */
   assert('#4 grid renders the year-over-year card', /Year over year/.test(d.getElementById('v-grid').innerHTML));
@@ -319,6 +324,114 @@ setTimeout(()=>{ try{
   assert('1.4.1 the plan view discloses coverage too',
     /📅 all 12 months recorded/.test(d.getElementById('v-plan').innerHTML));
   w.showView('grid');
+
+  /* ================================================================
+     1.4.2 — workspace naming and the privacy notice
+     ================================================================ */
+
+  /* ---- derived name ---- */
+  assert('1.4.2 the sample workspace is named, not anonymous',
+    w.ledgerName()==='Sample household ledger' && /Sample household ledger/.test(d.getElementById('brandName').textContent));
+  assert('1.4.2 the browser title carries the ledger name',
+    d.title==='Sample household ledger — LifeLedger');
+  const auto=w.derivedLedgerName();
+  w.LL.state.meta.sample=false;
+  assert('1.4.2 the name derives from the household once real data is in use',
+    w.derivedLedgerName()==='Hayden & Simone' && w.ledgerName()==='Hayden & Simone');
+  /* a single member names it after them; no members falls back safely */
+  const twoMembers=w.LL.state.household.members.slice();
+  w.LL.state.household.members=[twoMembers[0]];
+  assert('1.4.2 a single contributor names the ledger after them',
+    w.derivedLedgerName()==='Hayden household ledger');
+  w.LL.state.household.members=[];
+  assert('1.4.2 with no household members the fallback name is still sensible',
+    w.derivedLedgerName()==='My ledger' && w.ledgerName()==='My ledger');
+  w.LL.state.household.members=twoMembers;
+  w.LL.state.meta.sample=true;
+  assert('1.4.2 restoring the sample restores its derived name', w.derivedLedgerName()===auto);
+  w.renderAll();
+
+  /* ---- renaming: custom names win, and survive the derivation ---- */
+  assert('1.4.2 a fresh sample ledger is not treated as custom-named', w.ledgerNameIsCustom()===false);
+  d.getElementById('ledgerNameInput').value='Boodoosingh household 2026';
+  w.renameLedger();
+  assert('1.4.2 renaming stores the name and marks it custom',
+    w.LL.state.meta.name==='Boodoosingh household 2026' && w.ledgerNameIsCustom()===true);
+  assert('1.4.2 the rename reaches the header, the tab title and the input',
+    /Boodoosingh household 2026/.test(d.getElementById('brandName').textContent) &&
+    d.title==='Boodoosingh household 2026 — LifeLedger' &&
+    d.getElementById('ledgerNameInput').value==='Boodoosingh household 2026');
+  assert('1.4.2 a custom name is not overwritten by the household derivation',
+    w.derivedLedgerName()!==w.ledgerName() && w.ledgerName()==='Boodoosingh household 2026');
+  assert('1.4.2 the header says the name is custom', /custom name/.test(d.getElementById('brandTag').textContent));
+  assert('1.4.2 the custom name rides along in the backup',
+    /Boodoosingh household 2026/.test(JSON.stringify(w.LL.state)));
+  assert('1.4.2 export filenames use the custom name, slugified',
+    w.ledgerFileStem()==='boodoosingh-household-2026');
+  w.exportJSON();
+  assert('1.4.2 the backup modal offers the named filename',
+    /boodoosingh-household-2026-backup-\d{4}-\d{2}-\d{2}\.json/.test(d.getElementById('expModal').innerHTML));
+  assert('1.4.2 the backup modal names the ledger it contains',
+    /Backup of “Boodoosingh household 2026”/.test(d.getElementById('expModal').innerHTML));
+  d.getElementById('expModal').style.display='none';
+  /* clearing the field reverts to the derived name */
+  d.getElementById('ledgerNameInput').value='   ';
+  w.renameLedger();
+  assert('1.4.2 clearing the name reverts to the derived one',
+    w.ledgerNameIsCustom()===false && w.ledgerName()===w.derivedLedgerName() && w.LL.state.meta.name==='');
+  assert('1.4.2 an unnamed ledger keeps the generic backup filename',
+    w.ledgerFileStem()==='lifeledger');
+  /* names are bounded and slugged safely */
+  w.setLedgerName('  A very long name that goes past sixty characters '.repeat(3));
+  assert('1.4.2 an over-long name is truncated', w.ledgerName().length<=60);
+  assert('1.4.2 a slug never yields an empty filename component',
+    /^[a-z0-9-]+$/.test(w.ledgerFileStem()) && w.ledgerFileStem().length>0);
+  w.setLedgerName('!!! ???');
+  assert('1.4.2 punctuation-only names still produce a usable filename stem',
+    w.ledgerFileStem()==='lifeledger' || /^[a-z0-9-]+$/.test(w.ledgerFileStem()));
+  w.setLedgerName('');
+
+  /* ---- privacy notice ---- */
+  w.showView('dash');
+  assert('1.4.2 the privacy notice is reachable from the Data menu',
+    /showPrivacyNotice\(\)/.test(d.getElementById('dataMenu').innerHTML) && /Privacy &amp; data/.test(d.getElementById('dataMenu').innerHTML));
+  w.showPrivacyNotice();
+  const pm=d.getElementById('privacyModal');
+  assert('1.4.2 the privacy notice opens', !!pm);
+  const ptxt=pm? pm.textContent : '';
+  assert('1.4.2 it states the data stays on the device', /stays on this device/.test(ptxt) && /no server, no account/.test(ptxt));
+  assert('1.4.2 it states plainly that the data is NOT encrypted',
+    /not encrypted/i.test(ptxt) && /readable text/i.test(ptxt) && /no password/i.test(ptxt));
+  assert('1.4.2 it says who can actually read the ledger',
+    /Who can read it/.test(ptxt) && /browser profile/.test(ptxt) && /shared or work computer/.test(ptxt));
+  assert('1.4.2 it warns that backups are plain text too', /backup files you export/.test(ptxt));
+  assert('1.4.2 it explains the permanent-loss risk and the export remedy',
+    /deletes the ledger permanently/.test(ptxt) && /Export a JSON backup first/.test(ptxt));
+  assert('1.4.2 it never claims protection the app does not provide',
+    !/encrypted for you|we encrypt|end-to-end|secure by design|military-grade/i.test(ptxt));
+  assert('1.4.2 it names the ledger it is describing', /My ledger|household|Boodoosingh/.test(ptxt));
+  assert('1.4.2 opening it twice does not stack duplicates',
+    (w.showPrivacyNotice(), d.querySelectorAll('#privacyModal').length===1));
+  w.ackPrivacy();
+  assert('1.4.2 acknowledging closes it and records the acknowledgement',
+    !d.getElementById('privacyModal') && w.LL.state.meta.privacySeen===true);
+  w.maybeShowPrivacyNotice();
+  assert('1.4.2 an acknowledged notice does not reappear', !d.getElementById('privacyModal'));
+  /* a brand-new install shows it once, at startup */
+  const newDom=makeDom();
+  const nw=newDom.window;
+  assert('1.4.2 a new install is shown the notice at startup', !!nw.document.getElementById('privacyModal'));
+  assert('1.4.2 the notice is shown for a new install even when storage works',
+    nw.localStorage.getItem('lifeledger.v1')!==null && !!nw.document.getElementById('privacyModal'));
+  /* but never alongside the storage warning, and never for a pre-existing save */
+  const old2={settings:{},streams:[],tx:[{id:'z',date:'2026-01-05',cat:'groceries',sub:'M',desc:'',amt:10,src:'manual',ded:false}],
+    budgets:{},household:{members:[]},meta:{created:1,sample:false,init:true}};
+  const oldDom=makeDom(win=>{ win.localStorage.setItem('lifeledger.v1', JSON.stringify(old2)) });
+  assert('1.4.2 an existing save is NOT nagged with a privacy notice it never saw',
+    !oldDom.window.document.getElementById('privacyModal') && oldDom.window.LL.state.meta.privacySeen===true);
+  const blockedDom=makeDom(win=>{ Object.defineProperty(win,'localStorage',{configurable:true,get(){ throw new Error('blocked') }}) });
+  assert('1.4.2 with storage blocked the loss warning takes precedence, with no stacked modals',
+    !!blockedDom.window.document.getElementById('storageWarnModal') && !blockedDom.window.document.getElementById('privacyModal'));
 
   assert('no runtime errors during the enhancement run', dom.errors.length===0);
   if(dom.errors.length) console.log('\nERRORS:\n'+dom.errors.join('\n---\n'));

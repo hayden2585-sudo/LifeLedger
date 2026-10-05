@@ -22,6 +22,17 @@ a{color:var(--brand)}
 
 /* ---------- header / nav ---------- */
 header.top{background:var(--head);color:#fff;padding:10px 18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;position:sticky;top:0;z-index:50}
+.brand{font-size:17px;font-weight:700;letter-spacing:.2px;display:flex;align-items:center;gap:9px;min-width:0}
+.brand .brandtext{display:flex;flex-direction:column;min-width:0}
+.brand .brandname{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:44vw}
+.top-actions{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.naming{display:flex;align-items:center;gap:0}
+.naming input{width:200px;background:#2c3a66;color:#fff;border:1px solid #44528a;border-radius:7px 0 0 7px;padding:5px 9px;font-size:12.5px;font:inherit}
+.naming input::placeholder{color:#9aa7c7}
+.naming input:focus{outline:none;border-color:#8fa4d8;background:#33447a;color:#fff}
+.naming button{background:#3a4a7d;color:#fff;border:1px solid #44528a;border-left:0;border-radius:0 7px 7px 0;padding:5px 9px;font-size:12.5px;cursor:pointer}
+.naming button:hover{background:#4a5c96}
+@media (max-width:760px){ .naming input{width:150px} .brand .brandname{max-width:60vw} }
 .brand{font-size:17px;font-weight:700;letter-spacing:.2px;display:flex;align-items:center;gap:9px}
 .brand .logo{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:7px;background:linear-gradient(135deg,#4f6fd8,#8b5cf6);font-size:15px}
 .brand .tag{font-weight:400;font-size:11.5px;opacity:.75;margin-left:2px}
@@ -163,9 +174,19 @@ footer{max-width:1320px;margin:0 auto;padding:14px 16px 30px;color:var(--mut);fo
 </head>
 <body>
 <header class="top">
-  <div class="brand"><span class="logo">▦</span> LifeLedger <span class="tag">expense &amp; income spreadsheet</span></div>
+  <div class="brand"><span class="logo">▦</span>
+    <span class="brandtext"><span class="brandname" id="brandName">LifeLedger</span>
+    <span class="tag" id="brandTag">expense &amp; income spreadsheet</span></span>
+  </div>
   <div class="top-actions">
     <span id="saveBadge" class="badge">…</span>
+    <span class="naming">
+      <input type="text" id="ledgerNameInput" maxlength="60" placeholder="Ledger name"
+             title="Name this ledger — used for its title and its export filenames"
+             onkeydown="if(event.key==='Enter'){event.preventDefault();renameLedger()}"
+             onblur="if(this.value.trim()!==ledgerName())renameLedger()">
+      <button type="button" onclick="renameLedger()" title="Save the name">✔</button>
+    </span>
     <select id="currencySel" title="Currency" onchange="setCurrency(this.value)"></select>
     <div class="menu">
       <button onclick="toggleMenu(event)">Data ▾</button>
@@ -174,6 +195,8 @@ footer{max-width:1320px;margin:0 auto;padding:14px 16px 30px;color:var(--mut);fo
         <button onclick="exportGridCSV()">⬇️ Export annual grid (CSV)</button>
         <button onclick="exportJSON()">⬇️ Export backup (JSON)</button>
         <button onclick="importJSONClick()">⬆️ Import backup (JSON)</button>
+        <hr>
+        <button onclick="closeMenu();showPrivacyNotice()">🔒 Privacy &amp; data — how this is stored</button>
         <hr>
         <button onclick="loadSample()">🎲 Load sample data</button>
         <button onclick="clearSample()">🧹 Clear sample data</button>
@@ -358,7 +381,7 @@ function freshState(){
       nisPct:5.4, nisCeilingMonthly:13600, healthSurchargeWeekly:8.25, payrollDeductionPct:0,
       savingsTargetPct:10, emergencyMonths:4, businessMarginPct:35, minWageHourly:20.50 },
     streams:[], recurringExpenses:[], tx:[], budgets:{}, household:{members:[]}, projects:[],
-    meta:{ created:Date.now(), sample:false, init:true }
+    meta:{ created:Date.now(), sample:false, init:true, name:'', nameCustom:false, privacySeen:false }
   };
 }
 /* Bring settings from older saves up to the current schema.
@@ -377,6 +400,14 @@ function migrateWorkspace(s){
   if(!Array.isArray(s.household?.members)) s.household={members:[]};
   if(!Array.isArray(s.projects)) s.projects=[];
   if(!Array.isArray(s.recurringExpenses)) s.recurringExpenses=[];
+  /* workspace naming (1.4.2): a save with no meta.name is an EXISTING install, so
+     default nameCustom to true — the user's ledger is theirs and we must not start
+     overwriting it with a name derived from their household later. Newly created
+     workspaces come from freshState(), which sets these explicitly. */
+  if(!s.meta) s.meta={};
+  if(s.meta.name===undefined) s.meta.name='';
+  if(s.meta.nameCustom===undefined) s.meta.nameCustom=true;
+  if(s.meta.privacySeen===undefined) s.meta.privacySeen=true;
   for(const p of s.projects){
     if(!p.items||!Array.isArray(p.items)) p.items=[];
     if(!p.type) p.type='home';
@@ -519,6 +550,94 @@ function vendorFromEmail(fromLine){
   const m = String(fromLine).match(/<([^>]+)>/); const addr = m? m[1] : String(fromLine);
   const dom = (addr.split('@')[1]||'').split('.')[0];
   return dom? dom.charAt(0).toUpperCase()+dom.slice(1) : null;
+}
+
+/* ----------------------------------------------------------------
+   WORKSPACE NAMING  (1.4.2)
+   A user's data was previously anonymous — "the ledger" had no name
+   anywhere, so backups were all `lifeledger-backup.json` and nothing
+   identified whose figures you were looking at. The name is derived
+   from what the app already knows (the household) and is fully
+   renameable; a rename is preserved and never overwritten by the
+   derivation.
+---------------------------------------------------------------- */
+function firstNameOf(full){ return String(full||'').trim().split(/\s+/)[0]||'' }
+function derivedLedgerName(){
+  if(state.meta && state.meta.sample) return 'Sample household ledger';
+  const ms=(state.household?.members||[]).map(m=>firstNameOf(m.name)).filter(Boolean);
+  if(ms.length===1) return ms[0]+' household ledger';
+  if(ms.length===2) return ms[0]+' & '+ms[1];
+  if(ms.length>2) return ms[0]+' +'+(ms.length-1)+' others';
+  return 'My ledger';
+}
+function ledgerName(){
+  const m=state.meta||{};
+  const custom=String(m.name||'').trim();
+  return custom || derivedLedgerName();
+}
+function ledgerNameIsCustom(){ return !!String(state.meta?.name||'').trim() }
+function slugify(s){
+  return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,48) || 'lifeledger';
+}
+function ledgerFileStem(){ return ledgerNameIsCustom()? slugify(ledgerName()) : 'lifeledger' }
+/* set (or, with an empty value, clear back to the derived name) */
+function setLedgerName(v){
+  const clean=String(v||'').trim().slice(0,60);
+  state.meta.name=clean;
+  state.meta.nameCustom=!!clean;
+  store.save(); renderChrome(); refreshLedgerNameInputs();
+  toast(clean? 'Ledger renamed to “'+clean+'”' : 'Ledger name reset to “'+ledgerName()+'”');
+}
+function renameLedger(){ const i=$('ledgerNameInput'); if(i) setLedgerName(i.value) }
+
+/* ----------------------------------------------------------------
+   PRIVACY & DATA NOTICE  (1.4.2)
+   There is no login, no account and no encryption in LifeLedger, so
+   there can be no "logon reminder". This says only what is true:
+   the data is local, it is NOT encrypted, and a backup file is a
+   plain-text copy. Claiming protection the app does not provide
+   would be worse than saying nothing at all.
+---------------------------------------------------------------- */
+function showPrivacyNotice(){
+  if($('privacyModal')) return;
+  const m=document.createElement('div');
+  m.id='privacyModal';
+  m.setAttribute('role','dialog');
+  m.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.7);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto';
+  m.innerHTML=`<div style="background:#fff;border-radius:14px;padding:26px;max-width:600px;box-shadow:0 20px 50px rgba(0,0,0,.3)">
+    <div style="font-size:32px;margin-bottom:6px">🔒</div>
+    <h2 style="margin:0 0 4px;font-size:19px">Your data &amp; your privacy</h2>
+    <p class="mut small" style="margin:0 0 14px">How <b>${esc(ledgerName())}</b> is stored — stated plainly, including what is <b>not</b> protected.</p>
+    <div style="font-size:13.3px;line-height:1.65">
+      <p style="margin:0 0 8px"><b>✓ It stays on this device.</b> Everything lives in this browser's local storage for this app only. There is no server, no account, no sync and no tracking — LifeLedger never sends your figures anywhere.</p>
+      <p style="margin:0 0 8px;background:#fdf3e4;border:1px solid #f2d3a2;border-radius:8px;padding:10px 12px"><b>⚠ It is not encrypted.</b> Your entries are stored as readable text, as are the JSON backup files you export. There is no password protecting them.</p>
+      <p style="margin:0 0 8px"><b>Who can read it:</b> anyone who can use this device or sign in to this computer account, anyone using this browser profile, and anyone you send a backup file to. On a shared or work computer, treat it as legible to others.</p>
+      <p style="margin:0 0 8px"><b>Protect it yourself:</b> keep this device and computer account locked, use a separate browser profile for finances, and store backups somewhere you control. If you need at-rest secrecy, put the backup inside an encrypted volume or password-protected archive — the app cannot do it for you.</p>
+      <p style="margin:0 0 2px"><b>Clearing browser data, uninstalling, or “Reset everything” deletes the ledger permanently.</b> Nothing can recover it. Export a JSON backup first.</p>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
+      <button class="btn" onclick="ackPrivacy()">I understand — don't show this again</button>
+      <button class="btn ghost" onclick="document.getElementById('privacyModal').remove()">Close</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+function ackPrivacy(){
+  state.meta.privacySeen=true; store.save();
+  const m=$('privacyModal'); if(m) m.remove();
+}
+/* shown once on a genuinely new install; a save that predates the notice is left alone */
+function maybeShowPrivacyNotice(){
+  if(!state || !state.meta) return;
+  if(state.meta.privacySeen===true) return;
+  showPrivacyNotice();
+}
+/* One overlay at a time at startup: if storage is unavailable that warning comes
+   first (it is the more urgent fact), and the privacy notice is deferred rather
+   than stacked on top of it. */
+function bootNotices(){
+  if(!store.ok){ showStorageWarning(); return }
+  maybeShowPrivacyNotice();
 }
 
 /* ----------------------------------------------------------------
@@ -674,7 +793,11 @@ function clearSample(btn){
   if(state.meta.sample){
     if(btn && !btn.dataset.armed){ btn.dataset.armed='1'; btn.textContent='Click again to confirm'; setTimeout(()=>{btn.dataset.armed='';btn.textContent='🧹 Clear sample data'},2600); return }
     state.tx=[]; state.budgets={}; state.streams=[]; state.household={members:[]}; state.projects=[];
-    state.meta.sample=false; store.save(); bootTimeDefaults(); renderAll(); toast('Sample data cleared — add your own entries');
+    state.meta.sample=false;
+    /* the sample's name may have been derived from it; drop a non-custom name so the
+       ledger re-derives from the user's own household as they add contributors */
+    if(!state.meta.nameCustom) state.meta.name='';
+    store.save(); bootTimeDefaults(); renderAll(); toast('Sample data cleared — “'+ledgerName()+'” is ready for your own entries');
   }
 }
 function resetAll(btn){
@@ -2285,7 +2408,7 @@ function csvOf(ts){
 function exportCSV(filtered){
   let ts=filtered? ledgerRows(): state.tx.slice();
   ts.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
-  showExportModal('Transactions CSV — '+ts.length+' rows', csvOf(ts), 'lifeledger-transactions.csv');
+  showExportModal('Transactions CSV — '+ts.length+' rows', csvOf(ts), ledgerFileStem()+'-transactions.csv');
 }
 function exportGridCSV(){
   const y=UI.gridYear, M=gridMatrix(y);
@@ -2295,9 +2418,13 @@ function exportGridCSV(){
     const tot=cr.vals.reduce((a,b)=>a+b,0); if(!tot && !(+state.budgets[cr.c.id])) continue;
     rows.push([cr.c.name,...cr.vals.map(v=>v||''),tot,'',+state.budgets[cr.c.id]||'']);
   }
-  showExportModal('Annual grid '+y+' CSV', rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n'), 'lifeledger-grid-'+y+'.csv');
+  showExportModal('Annual grid '+y+' CSV', rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n'), ledgerFileStem()+'-grid-'+y+'.csv');
 }
-function exportJSON(){ showExportModal('Backup JSON — save this file to keep or move your data', JSON.stringify(state,null,1), 'lifeledger-backup.json') }
+/* the backup carries the ledger name, so name the file after it once the user has chosen one */
+function exportJSON(){
+  const fname=ledgerFileStem()+'-backup-'+todayISO()+'.json';
+  showExportModal('Backup of “'+ledgerName()+'” — save this file to keep or move your data', JSON.stringify(state,null,1), fname);
+}
 function showExportModal(title, content, filename){
   let m=$('expModal');
   if(!m){ m=document.createElement('div'); m.id='expModal';
@@ -2347,6 +2474,26 @@ function updateSaveBadge(){
   if(store.ok){ b.textContent='✔ saved locally'; b.className='badge' }
   else { b.textContent='⚠ preview mode — use Data ▾ ▸ Export JSON to keep changes'; b.className='badge warn' }
 }
+/* ----------------------------------------------------------------
+   WORKSPACE CHROME  (1.4.2)
+   Keeps the ledger's name visible everywhere it belongs: the browser
+   tab, the header, and the naming input itself (without stomping on
+   what the user is currently typing).
+---------------------------------------------------------------- */
+function refreshLedgerNameInputs(){
+  const i=$('ledgerNameInput');
+  if(i && document.activeElement!==i && i.value!==ledgerName()) i.value=ledgerName();
+}
+function renderChrome(){
+  const name=ledgerName();
+  document.title=name+' — LifeLedger';
+  const bn=$('brandName'); if(bn) bn.textContent=name;
+  const bt=$('brandTag');
+  if(bt) bt.textContent = ledgerNameIsCustom()
+    ? 'custom name · ✎ editable'
+    : 'named from your household · ✎ to rename';
+  refreshLedgerNameInputs();
+}
 function showView(v){
   UI.view=v;
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
@@ -2355,9 +2502,10 @@ function showView(v){
   window.scrollTo({top:0});
 }
 function renderBanner(){
-  $('banner').innerHTML = state.meta.sample
-    ? `<div class="banner">🎲 You're exploring <b>sample data</b> — 13 months of realistic, Trinidad-flavoured entries. When you're ready: <button class="btn small ghost" onclick="clearSample(this)">🧹 Clear sample data</button> then add your own.</div>`
+  const tag=state.meta.sample
+    ? `<div class="banner">🎲 You're exploring <b>sample data</b> in <b>${esc(ledgerName())}</b> — 13 months of realistic, Trinidad-flavoured entries. When you're ready: <button class="btn small ghost" onclick="clearSample(this)">🧹 Clear sample data</button> then add your own. Rename this ledger with the ✎ field at the top.</div>`
     : '';
+  $('banner').innerHTML=tag;
 }
 function bootTimeDefaults(){
   const lm=latestMonthWithTx()||{y:new Date().getFullYear(), m:new Date().getMonth()};
@@ -2367,7 +2515,7 @@ function bootTimeDefaults(){
   UI.editingId=null; UI.candidates=[]; UI.csvCands=[]; UI.emailText=''; UI.ocrMsg=''; UI.parseMsg=''; UI.csvMsg='';
 }
 function renderAll(){
-  renderBanner(); renderDash(); renderLedger(); renderGrid(); renderBudgets(); renderHousehold(); renderProjects(); renderIncome(); renderPlan(); renderIngest(); updateSaveBadge(); refreshAlertBadges();
+  renderBanner(); renderDash(); renderLedger(); renderGrid(); renderBudgets(); renderHousehold(); renderProjects(); renderIncome(); renderPlan(); renderIngest(); updateSaveBadge(); renderChrome(); refreshAlertBadges();
 }
 /* ================================================================
    VIEW: HOUSEHOLD
@@ -2687,7 +2835,7 @@ function renderProjects(){
   bootTimeDefaults();
   renderAll();
   showView('dash');
-  showStorageWarning();   /* IMPROVEMENT 1 — block-and-acknowledge if storage is unavailable */
+  bootNotices();   /* storage-loss warning (1.4.0), else the privacy notice (1.4.2) */
 })();
 </script>
 </body>

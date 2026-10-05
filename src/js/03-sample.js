@@ -100,7 +100,11 @@ function clearSample(btn){
   if(state.meta.sample){
     if(btn && !btn.dataset.armed){ btn.dataset.armed='1'; btn.textContent='Click again to confirm'; setTimeout(()=>{btn.dataset.armed='';btn.textContent='🧹 Clear sample data'},2600); return }
     state.tx=[]; state.budgets={}; state.streams=[]; state.household={members:[]}; state.projects=[];
-    state.meta.sample=false; store.save(); bootTimeDefaults(); renderAll(); toast('Sample data cleared — add your own entries');
+    state.meta.sample=false;
+    /* the sample's name may have been derived from it; drop a non-custom name so the
+       ledger re-derives from the user's own household as they add contributors */
+    if(!state.meta.nameCustom) state.meta.name='';
+    store.save(); bootTimeDefaults(); renderAll(); toast('Sample data cleared — “'+ledgerName()+'” is ready for your own entries');
   }
 }
 function resetAll(btn){

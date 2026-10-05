@@ -1,6 +1,6 @@
 {
   "name": "lifeledger",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "private": true,
   "type": "module",
   "description": "LifeLedger — offline-first expense & income spreadsheet. Single-file web app · installable PWA · Windows/macOS/Linux desktop · Android.",

@@ -50,7 +50,7 @@ function csvOf(ts){
 function exportCSV(filtered){
   let ts=filtered? ledgerRows(): state.tx.slice();
   ts.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
-  showExportModal('Transactions CSV — '+ts.length+' rows', csvOf(ts), 'lifeledger-transactions.csv');
+  showExportModal('Transactions CSV — '+ts.length+' rows', csvOf(ts), ledgerFileStem()+'-transactions.csv');
 }
 function exportGridCSV(){
   const y=UI.gridYear, M=gridMatrix(y);
@@ -60,9 +60,13 @@ function exportGridCSV(){
     const tot=cr.vals.reduce((a,b)=>a+b,0); if(!tot && !(+state.budgets[cr.c.id])) continue;
     rows.push([cr.c.name,...cr.vals.map(v=>v||''),tot,'',+state.budgets[cr.c.id]||'']);
   }
-  showExportModal('Annual grid '+y+' CSV', rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n'), 'lifeledger-grid-'+y+'.csv');
+  showExportModal('Annual grid '+y+' CSV', rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n'), ledgerFileStem()+'-grid-'+y+'.csv');
 }
-function exportJSON(){ showExportModal('Backup JSON — save this file to keep or move your data', JSON.stringify(state,null,1), 'lifeledger-backup.json') }
+/* the backup carries the ledger name, so name the file after it once the user has chosen one */
+function exportJSON(){
+  const fname=ledgerFileStem()+'-backup-'+todayISO()+'.json';
+  showExportModal('Backup of “'+ledgerName()+'” — save this file to keep or move your data', JSON.stringify(state,null,1), fname);
+}
 function showExportModal(title, content, filename){
   let m=$('expModal');
   if(!m){ m=document.createElement('div'); m.id='expModal';
@@ -112,6 +116,26 @@ function updateSaveBadge(){
   if(store.ok){ b.textContent='✔ saved locally'; b.className='badge' }
   else { b.textContent='⚠ preview mode — use Data ▾ ▸ Export JSON to keep changes'; b.className='badge warn' }
 }
+/* ----------------------------------------------------------------
+   WORKSPACE CHROME  (1.4.2)
+   Keeps the ledger's name visible everywhere it belongs: the browser
+   tab, the header, and the naming input itself (without stomping on
+   what the user is currently typing).
+---------------------------------------------------------------- */
+function refreshLedgerNameInputs(){
+  const i=$('ledgerNameInput');
+  if(i && document.activeElement!==i && i.value!==ledgerName()) i.value=ledgerName();
+}
+function renderChrome(){
+  const name=ledgerName();
+  document.title=name+' — LifeLedger';
+  const bn=$('brandName'); if(bn) bn.textContent=name;
+  const bt=$('brandTag');
+  if(bt) bt.textContent = ledgerNameIsCustom()
+    ? 'custom name · ✎ editable'
+    : 'named from your household · ✎ to rename';
+  refreshLedgerNameInputs();
+}
 function showView(v){
   UI.view=v;
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
@@ -120,9 +144,10 @@ function showView(v){
   window.scrollTo({top:0});
 }
 function renderBanner(){
-  $('banner').innerHTML = state.meta.sample
-    ? `<div class="banner">🎲 You're exploring <b>sample data</b> — 13 months of realistic, Trinidad-flavoured entries. When you're ready: <button class="btn small ghost" onclick="clearSample(this)">🧹 Clear sample data</button> then add your own.</div>`
+  const tag=state.meta.sample
+    ? `<div class="banner">🎲 You're exploring <b>sample data</b> in <b>${esc(ledgerName())}</b> — 13 months of realistic, Trinidad-flavoured entries. When you're ready: <button class="btn small ghost" onclick="clearSample(this)">🧹 Clear sample data</button> then add your own. Rename this ledger with the ✎ field at the top.</div>`
     : '';
+  $('banner').innerHTML=tag;
 }
 function bootTimeDefaults(){
   const lm=latestMonthWithTx()||{y:new Date().getFullYear(), m:new Date().getMonth()};
@@ -132,5 +157,5 @@ function bootTimeDefaults(){
   UI.editingId=null; UI.candidates=[]; UI.csvCands=[]; UI.emailText=''; UI.ocrMsg=''; UI.parseMsg=''; UI.csvMsg='';
 }
 function renderAll(){
-  renderBanner(); renderDash(); renderLedger(); renderGrid(); renderBudgets(); renderHousehold(); renderProjects(); renderIncome(); renderPlan(); renderIngest(); updateSaveBadge(); refreshAlertBadges();
+  renderBanner(); renderDash(); renderLedger(); renderGrid(); renderBudgets(); renderHousehold(); renderProjects(); renderIncome(); renderPlan(); renderIngest(); updateSaveBadge(); renderChrome(); refreshAlertBadges();
 }
