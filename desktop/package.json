@@ -1,7 +1,7 @@
 {
   "name": "lifeledger-desktop",
   "productName": "LifeLedger",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Offline expense & income spreadsheet — desktop build (Windows, macOS, Linux)",
   "author": "LifeLedger",
   "license": "MIT",

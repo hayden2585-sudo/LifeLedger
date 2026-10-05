@@ -57,7 +57,7 @@ lifeledger/
 │   ├── package.json
 │   └── www/                   ← web assets (from `npm run build`)
 ├── tools/gen-icons.mjs        ← regenerates the PNG icon set (pure Node)
-└── tests/                     ← jsdom suites (166 checks) · `npm test`
+└── tests/                     ← jsdom suites (191 checks) · `npm test`
 ```
 
 ## 2 · Quick start (no installation)
@@ -144,7 +144,7 @@ not persist — export before closing.**
 
 ```bash
 npm install        # jsdom (dev-only)
-npm test           # 166 jsdom checks against web/lifeledger.html
+npm test           # 191 jsdom checks against web/lifeledger.html
 node tools/gen-icons.mjs   # regenerate icon PNGs after changing the logo logic
 node server.mjs    # serve PWA at http://127.0.0.1:8080
 ```
@@ -172,8 +172,7 @@ subtypes for salary/wages, side hustles, salary arrears, overtime/extra duties, 
 sale of assets, gratuity, welfare benefits, rental income, and gifts/remittances (including
 money sent from abroad).
 
-**Status:** release 1.4.0 adds the proactive alerts panel, data health check, year-over-year comparison,
-household spending split, project archive lifecycle and the storage-loss warning. See the changelog.
+**Status:** release 1.4.1 corrects the trailing-12 average denominator, makes the project budget field honest\nand stops non-monthly fixed costs being reported as overspending. 1.4.0 added the proactive alerts panel,\ndata health check, year-over-year comparison, household spending split, project archive lifecycle and the\nstorage-loss warning. See the changelog.
 
 **Disclaimer:** educational tool — not financial, tax or investment advice.
 
@@ -184,6 +183,35 @@ GitHub is intended to become the canonical source and release store. The applica
 The important separation is: **GitHub distributes application code; each device retains authority over its own financial data.** User backups, local storage and credentials are never part of the application repository.
 
 ## 9 · Changelog
+
+**1.4.1** — correctness fixes to the numbers every view reports
+- **Trailing-12 averages no longer divide by a hard 12.** Averages are now divided by the months that
+  actually contain entries, with the raw totals kept separately. For anyone whose records cover less than
+  a year this was a serious error: with three months recorded, the app reported a **quarter** of the real
+  monthly income — and every guideline budget, the income-map ladder, the savings target, the
+  minimum-wage comparison and the project funding projection inherited that error. A three-month user now
+  sees their true average, and the whole app agrees with the Annual Grid and year-over-year views, which
+  already averaged over months with data.
+  - **What to expect if you are a newer user:** your headline income, expenses and guideline budgets will
+    be **higher and more accurate** than before, and project funding projections will be **less
+    optimistic** (they were crediting a part-year surplus as if it recurred every month).
+  - Averages are disclosed, never silent: a **📅 coverage chip** on the Dashboard, Plan and Budgets views
+    states how much of the window is populated ("all 12 months recorded" / "averaged over 3 of the last
+    12 months"), and the data-health check lists any month inside your records with nothing in it.
+- **Project budget field no longer lies.** A project's budget is the sum of its line items whenever items
+  exist, so the editable "base budget" field silently discarded whatever you typed into it. It is now
+  disabled and shows the budget actually in force, with the reason and a pointer to the line items; a
+  project with no line items keeps an editable base budget.
+- **Non-monthly fixed costs stop being reported as overspending.** Motor insurance billed quarterly,
+  licensing annually or school fees by term breached a monthly budget every time they landed — four false
+  overages a year for a perfectly predictable cost, which is exactly how people learn to ignore budget
+  alerts. Life Ledger now detects the cadence from the ledger itself (`detectCadence`, coefficient of
+  variation over payment months) and reports one honest annual figure with a suggested monthly
+  equivalent, instead of a monthly breach per payment. The Budgets view tags such costs 🔄 with their
+  quarterly/annual pattern, the true 12-month total and a "use avg" button. Genuinely overspent monthly
+  categories still warn exactly as before.
+- Regression coverage grew from 166 to 191 jsdom checks, covering the denominator, coverage disclosure,
+  cadence detection, funding basis and the project budget field.
 
 **1.4.0** — proactive insight & data integrity
 - **Proactive alerts panel** on the Dashboard. Life Ledger already knew when a budget was overspent, a
@@ -215,7 +243,7 @@ The important separation is: **GitHub distributes application code; each device 
 - **CSV export keeps attribution**: `household_member`, `project`, `project_item` and `income_type` were
   previously stripped at export; they are now included, and a spend on a project that has since been
   archived still resolves its project name.
-- Regression coverage grew from 82 to 166 jsdom checks, including a new `tests/smoke4.cjs` suite for the
+- Regression coverage grew from 82 to 166 jsdom checks in 1.4.0, and to 191 in 1.4.1, including a new `tests/smoke4.cjs` suite for the
   six enhancements plus migration, archive and restore round-trips.
 **1.3.0** — household + projects expansion
 - Added a **Household** branch with contributor/member attribution for working couples, remote professionals, stay-at-home professionals and other household contributors.

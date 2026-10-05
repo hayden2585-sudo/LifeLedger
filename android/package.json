@@ -1,6 +1,6 @@
 {
   "name": "lifeledger-android",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "private": true,
   "description": "LifeLedger Android shell (Capacitor) — produces a debuggable APK",
   "scripts": {

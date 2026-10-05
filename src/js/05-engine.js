@@ -104,6 +104,44 @@ function txMatchesStream(t,s){
   return ((t.sub||'')+' '+(t.desc||'')).toLowerCase().includes(word);
 }
 function streamPostings(s){ return state.tx.filter(t=>txMatchesStream(t,s)) }
+
+/* ================================================================
+   SPENDING CADENCE
+   A fixed cost that is not billed monthly — motor insurance every
+   quarter, licensing annually, school fees by term — breaches a
+   monthly budget every single time it lands, which is not overspend.
+   Left alone, that trains people to ignore budget alerts entirely.
+   detectCadence() recognises the pattern from the ledger itself and
+   alertsFor() stops crying wolf, reporting one honest annual figure
+   instead of a monthly breach per payment.
+   ================================================================ */
+function categorySpendMonths(catId){
+  const out={};
+  for(const x of state.tx){ if(x.cat!==catId) continue;
+    const p=txYM(x); out[p.y*12+p.m]=(out[p.y*12+p.m]||0)+x.amt }
+  return out;
+}
+function detectCadence(catId){
+  const by=categorySpendMonths(catId);
+  const active=Object.values(by).filter(v=>v>0);
+  if(active.length<3) return null;                    /* not enough history to tell */
+  const mean=active.reduce((a,b)=>a+b,0)/active.length;
+  if(mean<=0) return null;
+  const sd=Math.sqrt(active.reduce((a,b)=>a+(b-mean)*(b-mean),0)/active.length);
+  const cv=sd/mean;
+  if(cv<0.5) return null;                             /* reasonably steady: treat as monthly */
+  /* label the pattern from how often it actually appears */
+  const gaps=[]; const keys=Object.keys(by).map(Number).sort((a,b)=>a-b);
+  for(let i=1;i<keys.length;i++) gaps.push(keys[i]-keys[i-1]);
+  const avgGap=gaps.length? gaps.reduce((a,b)=>a+b,0)/gaps.length : 1;
+  const kind = avgGap>=10? 'annual' : avgGap>=2.5? 'quarterly' : 'irregular';
+  /* adverb form for prose ("billed quarterly"), noun+ly for chips ("quarterly") */
+  const adv = { annual:'annually', quarterly:'quarterly', irregular:'irregularly' }[kind];
+  return { catId, cv, activeMonths:active.length, kind, label:kind, adverb:adv };
+}
+/* true when a category should NOT be judged against a single month's budget */
+function isLumpyCategory(catId){ const d=detectCadence(catId); return !!d && d.activeMonths>=3 }
+
 function alertsFor(){
   const out=[];
   const now=new Date();
@@ -111,25 +149,42 @@ function alertsFor(){
   const daysInMonth=new Date(mk.y, mk.m+1, 0).getDate();
   const isCurrentMonth = mk.y===now.getFullYear() && mk.m===now.getMonth();
   const st=monthStats(mk.y, mk.m);
+  const tw=t12();
 
-  /* --- budget overages, with the remaining-days context --- */
+  /* --- budget overages, with the remaining-days context. A cost that is not
+         billed monthly is reported once, as an annual figure, instead of as a
+         monthly breach on every payment. --- */
   for(const o of st.over){
     const left=(isCurrentMonth? daysInMonth-now.getDate(): 0);
+    const cad=detectCadence(o.cat);
+    const annual=tw.byCatTotals[o.cat]||0;
+    /* a cost billed a handful of times a year is not a monthly overspend */
+    if(cad && annual>o.bud*12*0.85){
+      out.push({ key:'cadence:'+o.cat, sev:'info', view:'budgets', icon:'🎯',
+        title:catName(o.cat)+' is not billed monthly',
+        detail:`${fmt0(o.act)} landed this month against a ${fmt0(o.bud)}/mo budget, but your ledger shows it is billed `
+          +`${cad.adverb} (${cad.activeMonths} payment months). Trailing-12 spend is ${fmt0(annual)}, i.e. ${fmt0(annual/12)}/mo — `
+          +`setting the monthly budget near that stops it flagging every time it is billed.` });
+      continue;
+    }
     out.push({ key:'budget:'+o.cat, sev:'warn', view:'budgets', icon:'🎯',
       title:catName(o.cat)+' is over budget',
       detail:`${fmt0(o.act)} spent against a ${fmt0(o.bud)} budget — ${fmt0(o.by)} over in ${MONTHS[mk.m]} ${mk.y}`
         + (left>0? `, with ${left} day${left===1?'':'s'} still to go` : '')+'.' });
   }
 
-  /* --- data gaps: a month with nothing recorded breaks the T12 averages --- */
-  const t=t12();
+  /* --- data gaps: a month with nothing recorded drags the averages down.
+         Only months since the first entry count — nothing existed before then. --- */
+  const firstDate=state.tx.reduce((a,x)=>a&&a<x.date?a:x.date,null);
   const empty=[];
-  for(const {y,m} of t.ms){ if(!txForMonth(y,m).length) empty.push(MONTHS[m]+' '+y) }
+  for(const {y,m} of tw.ms){
+    if(!txForMonth(y,m).length && firstDate && iso(new Date(y,m,1))>=firstDate) empty.push(MONTHS[m]+' '+y);
+  }
   if(empty.length){
     out.push({ key:'gap:months', sev: empty.length>=2?'warn':'info', view:'grid', icon:'🗓️',
       title: empty.length===1? 'One month has no entries' : empty.length+' months have no entries',
       detail: empty.slice(0,4).join(', ')+(empty.length>4? ' +'+(empty.length-4)+' more' : '')
-        +' — trailing-12 averages treat those as zero spend.' });
+        +` — since your records begin (${firstDate}), so the averages rest on ${tw.withData} months.` });
   }
 
   /* --- recurring income streams that stopped posting --- */

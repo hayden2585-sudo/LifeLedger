@@ -25,10 +25,14 @@ function projectActual(p,itemId){
 }
 function projectFunding(p){
   const budget=projectBudget(p), actual=projectActual(p), remaining=Math.max(0,budget-actual), t=t12();
-  const available=Math.max(0,t.incAvg-t.expAvg), fp=p.fundingPlan||{}, fixed=+fp.fixedMonthlyContribution||0, pct=+fp.surplusAllocationPct||0;
+  /* "what I can free up" is the surplus earned over the whole trailing window, not a
+     per-month average — with incAvg/expAvg divided by the months recorded and the
+     contribution then added 12× a year, a part-year user was credited four times the
+     surplus they had actually earned. */
+  const available=Math.max(0,t.incTotal-t.expTotal), fp=p.fundingPlan||{}, fixed=+fp.fixedMonthlyContribution||0, pct=+fp.surplusAllocationPct||0;
   const monthly=fixed>0?fixed:available*pct/100, reserve=+fp.startingReserve||0, oneTime=+fp.oneTimeContribution||0, initial=Math.max(0,reserve+oneTime-actual);
   const months=monthly>0&&remaining>initial?Math.ceil((remaining-initial)/monthly):0; const eta=months?new Date(new Date().getFullYear(),new Date().getMonth()+months,1):null;
-  return {budget,actual,remaining,available,monthly,reserve,oneTime,initial,months,eta};
+  return {budget,actual,remaining,available,monthly,reserve,oneTime,initial,months,eta,t};
 }
 function addProject(){
   const name=$('projName')?.value.trim(); if(!name){toast('Give the project a name');return}
@@ -150,7 +154,13 @@ function renderProjects(){
     '<div class="formgrid"><div><label class="f">Category</label><select onchange="updateProjectField(\''+p.id+'\',\'type\',this.value)">'+PROJECT_TYPES.map(x=>'<option value="'+x[0]+'" '+(x[0]===p.type?'selected':'')+'>'+x[1]+'</option>').join('')+'</select></div>'+
     '<div><label class="f">Priority</label><select onchange="updateProjectPriority(\''+p.id+'\',this.value)">'+PROJECT_PRIORITIES.map(x=>'<option value="'+x[0]+'" '+(x[0]===p.priority?'selected':'')+'>'+x[1]+'</option>').join('')+'</select></div>'+
     '<div><label class="f">Status</label><select onchange="setProjectStatus(\''+p.id+'\',this.value,this)">'+PROJECT_STATUSES.map(x=>'<option value="'+x[0]+'" '+(x[0]===p.status?'selected':'')+'>'+x[1]+'</option>').join('')+'</select><span class="hint">Completed archives the project</span></div>'+
-    '<div><label class="f">Target date</label><input type="date" value="'+esc(p.targetDate||'')+'" onchange="updateProjectField(\''+p.id+'\',\'targetDate\',this.value)"></div><div><label class="f">Base budget</label><input type="number" min="0" step="10" value="'+(p.baseBudget||'')+'" onchange="updateProjectField(\''+p.id+'\',\'budget\',this.value)"></div></div>'+
+    '<div><label class="f">Target date</label><input type="date" value="'+esc(p.targetDate||'')+'" onchange="updateProjectField(\''+p.id+'\',\'targetDate\',this.value)"></div>'+
+    /* The budget used by the project is the sum of its line items whenever items exist,
+       so an editable "base budget" here would accept input and silently discard it.
+       Disabled, with the reason stated, instead of pretending to work. */
+    (p.items.length
+      ? '<div><label class="f">Budget</label><input type="number" value="'+projectBudget(p)+'" disabled title="Sum of the line items below — edit or remove items to change it"><span class="hint">Sum of line items below — edit the items to change it</span></div>'
+      : '<div><label class="f">Base budget</label><input type="number" min="0" step="10" value="'+(p.baseBudget||'')+'" onchange="updateProjectField(\''+p.id+'\',\'budget\',this.value)"><span class="hint">Used until you add line items</span></div>')+'</div>'+
     '<div class="kpis" style="margin-top:12px"><div class="kpi"><div class="lbl">Budget</div><div class="v">'+fmt0(f.budget)+'</div><div class="sub">'+(p.items.length?'sum of items':'base budget')+'</div></div>'+
     '<div class="kpi"><div class="lbl">Actual</div><div class="v">'+fmt0(f.actual)+'</div><div class="sub">linked ledger costs</div></div><div class="kpi"><div class="lbl">Remaining</div><div class="v '+(f.remaining>0?'pos':'neg')+'">'+fmt0(f.remaining)+'</div><div class="sub">'+(f.remaining>0?'to spend':'budget used')+'</div></div>'+
     '<div class="kpi"><div class="lbl">Completion</div><div class="v">'+pct.toFixed(0)+'%</div><div class="sub">'+(p.targetDate?'target '+esc(p.targetDate):'no target')+'</div></div></div>'+

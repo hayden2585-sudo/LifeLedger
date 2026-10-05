@@ -13,6 +13,7 @@ const {JSDOM, VirtualConsole}=require('jsdom');
 const html=fs.readFileSync(process.argv[2]||'web/lifeledger.html','utf8');
 let fails=0;
 const assert=(n,c)=>{ console.log((c?'PASS':'FAIL')+' - '+n); if(!c) fails++ };
+const t12Of=w=>w.t12();
 function makeDom(beforeParse){
   const errors=[];
   const vc=new VirtualConsole();
@@ -216,6 +217,108 @@ setTimeout(()=>{ try{
   const p0=dom2.window.LL.state.projects[0];
   assert('#7 pre-archive completed project migrates to archived',
     p0.archived===true && p0.status==='completed' && 'completedAt' in p0);
+
+  /* ================================================================
+     1.4.1 — coverage-aware averages, cadence detection, honest fields
+     ================================================================ */
+
+  /* ---- the trailing-12 denominator ---- */
+  const full=t12Of(w);
+  assert('1.4.1 t12 exposes both a per-recorded-month average and the raw totals',
+    'incAvg' in full && 'incTotal' in full && 'byCatTotals' in full && 'coverage' in full);
+  assert('1.4.1 t12 divides by months WITH data, not a hard 12',
+    full.n===full.withData && full.withData<=full.totN);
+  assert('1.4.1 incAvg * n reconstructs the total',
+    Math.abs(full.incAvg*full.n-full.incTotal)<0.01);
+  assert('1.4.1 sample data covers the full window so nothing moves for a year-long user',
+    full.withData===12 && full.coverage===1);
+
+  /* a genuine part-year user must not have their income divided by 12 */
+  const keepAll=w.LL.state.tx, nowD=new Date();
+  const threeMonths=keepAll.filter(x=>{ const q=w.txYM(x); return (nowD.getFullYear()-q.y)*12+(nowD.getMonth()-q.m)<3 });
+  w.LL.state.tx=threeMonths;
+  const t3=w.t12(), im3=w.incomeMapNumbers();
+  const trueAvg=threeMonths.filter(x=>x.cat==='income').reduce((a,x)=>a+x.amt,0)/3;
+  assert('1.4.1 a 3-month user is no longer understated (was 4x too low)',
+    t3.n===3 && Math.abs(t3.incAvg-trueAvg)<0.01);
+  assert('1.4.1 the income map inherits the corrected base, not a quarter of it',
+    Math.abs(im3.netMonthly-trueAvg)<0.01 && im3.netMonthly>trueAvg*0.99);
+  assert('1.4.1 savings goal follows the corrected income',
+    Math.abs(im3.savingsGoalM-trueAvg*w.LL.state.settings.savingsTargetPct/100)<0.01);
+  assert('1.4.1 coverage is reported honestly for a part-year user',
+    t3.coverage<1 && /averaged over 3 of the last 12 months/.test(w.coverageNote(t3)) && w.coverageIsPartial(t3));
+  assert('1.4.1 byCatAvg also divides by recorded months',
+    Object.keys(t3.byCatAvg).every(k=>Math.abs(t3.byCatAvg[k]*t3.n-t3.byCatTotals[k])<0.01));
+
+  /* the project funding basis must be the surplus actually earned in the window */
+  const proj3=w.LL.state.projects.find(x=>!x.archived);
+  const f3=w.projectFunding(proj3);
+  const earned=threeMonths.filter(x=>x.cat==='income').reduce((a,x)=>a+x.amt,0)
+              -threeMonths.filter(x=>x.cat!=='income').reduce((a,x)=>a+x.amt,0);
+  assert('1.4.1 project funding uses surplus EARNED over the window, not a monthly average',
+    Math.abs(f3.available-Math.max(0,earned))<0.01 && f3.available>f3.t.incAvg-f3.t.expAvg);
+  w.LL.state.tx=keepAll;
+  w.renderAll();
+
+  /* ---- cadence: non-monthly fixed costs stop crying wolf ---- */
+  assert('1.4.1 detectCadence needs history before it commits', w.detectCadence('nonexistent_cat')===null);
+  w.LL.state.tx=[];
+  assert('1.4.1 detectCadence declines to judge a category with too few months', w.detectCadence('insurance')===null);
+  w.LL.state.tx=keepAll;
+  const steady=w.detectCadence('groceries'), lumpy=w.detectCadence('insurance');
+  assert('1.4.1 a monthly cost is not flagged as lumpy', steady===null && !w.isLumpyCategory('groceries'));
+  assert('1.4.1 a quarterly/irregular cost IS detected and labelled',
+    !!lumpy && ['quarterly','annual','irregular'].indexOf(lumpy.kind)>=0 && !!lumpy.adverb);
+  assert('1.4.1 lumpy detection is not applied to monthly spend',
+    w.isLumpyCategory('groceries')===false);
+  const a1=w.alertsFor();
+  const cadAlert=a1.find(a=>a.key==='cadence:insurance');
+  assert('1.4.1 a non-monthly fixed cost reports once as an annual figure, not a monthly breach',
+    !!cadAlert && cadAlert.sev==='info' && !a1.some(a=>a.key==='budget:insurance'));
+  assert('1.4.1 the cadence alert still names the real 12-month figure and a fix',
+    !!cadAlert && /Trailing-12 spend is/.test(cadAlert.detail) && /monthly budget near that/.test(cadAlert.detail));
+  /* a genuinely overspent monthly category must still raise a real warning */
+  w.setBudget('groceries', 1);
+  assert('1.4.1 a genuinely overspent monthly category still warns',
+    w.alertsFor().some(a=>a.key==='budget:groceries' && a.sev==='warn'));
+  delete w.LL.state.budgets.groceries; w.renderAll();
+  w.showView('budgets');
+  assert('1.4.1 the budgets view tags non-monthly costs', /🔄 (quarterly|annual|irregular)/.test(d.getElementById('v-budgets').innerHTML));
+
+  /* ---- the formerly-inert project budget field ---- */
+  w.showView('projects');
+  const withItems=w.LL.state.projects.find(x=>!x.archived && x.items.length);
+  const fieldHTML=d.getElementById('v-projects').innerHTML;
+  assert('1.4.1 a project with line items no longer offers an editable base budget',
+    /<input type="number" value="\d+" disabled/.test(fieldHTML));
+  assert('1.4.1 the disabled field shows the budget actually in force',
+    fieldHTML.indexOf('value="'+w.projectBudget(withItems)+'" disabled')>=0);
+  assert('1.4.1 the field explains where the budget comes from', /Sum of line items/.test(fieldHTML));
+  /* and it is genuinely inert: the value in force is the item sum */
+  assert('1.4.1 projectBudget equals the line-item sum, which is what is displayed',
+    w.projectBudget(withItems)===withItems.items.reduce((a,i)=>a+ +i.budget,0));
+  const noItems=w.LL.state.projects.find(x=>!x.archived && !x.items.length);
+  if(!noItems){
+    const tmp={id:'nobudget',name:'No items yet',type:'other',priority:'normal',status:'planning',archived:false,
+      items:[],baseBudget:2500,fundingPlan:{}};
+    w.LL.state.projects.push(tmp); w.renderProjects();
+    assert('1.4.1 a project with no line items keeps an editable base budget',
+      /Base budget<\/label><input type="number" min="0" step="10" value="2500"/.test(d.getElementById('v-projects').innerHTML));
+    w.LL.state.projects=w.LL.state.projects.filter(p=>p.id!=='nobudget');
+  }
+
+  /* ---- coverage disclosure ---- */
+  w.showView('dash');
+  assert('1.4.1 the dashboard discloses coverage of the trailing window',
+    /all 12 months recorded/.test(d.getElementById('v-dash').innerHTML));
+  w.LL.state.tx=threeMonths; w.renderDash();
+  assert('1.4.1 a part-year user sees the coverage caveat on the dashboard',
+    /averaged over 3 of the last 12 months/.test(d.getElementById('v-dash').innerHTML));
+  w.LL.state.tx=keepAll; w.renderAll();
+  w.showView('plan');
+  assert('1.4.1 the plan view discloses coverage too',
+    /📅 all 12 months recorded/.test(d.getElementById('v-plan').innerHTML));
+  w.showView('grid');
 
   assert('no runtime errors during the enhancement run', dom.errors.length===0);
   if(dom.errors.length) console.log('\nERRORS:\n'+dom.errors.join('\n---\n'));

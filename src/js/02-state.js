@@ -108,14 +108,38 @@ function agg(ts){
 /* last n calendar months incl current -> [{y,m}] oldest first */
 function trailingMonths(n){ const out=[], now=new Date();
   for(let i=n-1;i>=0;i--){ const d=new Date(now.getFullYear(), now.getMonth()-i, 1); out.push({y:d.getFullYear(), m:d.getMonth()}) } return out }
-/* trailing-12 aggregates (averages per month) */
+/* Trailing-12 aggregates.
+   IMPORTANT — the trailing window is always the last 12 calendar months, but an
+   "average" only means something if it is divided by the months that actually
+   contributed data. Dividing by a hard 12 understates every headline figure for
+   anyone whose records cover less than a year: with three months recorded, the
+   app reported a quarter of the real monthly income, and every guideline budget,
+   the income-map ladder and the minimum-wage comparison inherited that error.
+   So:
+     incAvg/expAvg/byCatAvg/n  → average per month WITH DATA ("n" is that count)
+     incTotal/expTotal, totN   → the raw 12-month totals and the full window size
+     coverage                  → how much of the window is actually populated
+   Views that need an annual figure use incTotal/expTotal; views that show a
+   representative monthly figure use incAvg/expAvg. */
 function t12(){
   const ms = trailingMonths(12); let inc=0, exp=0; const byCat={};
-  for(const {y,m} of ms){ const a=agg(txForMonth(y,m)); inc+=a.inc; exp+=a.exp;
-    for(const k in a.byCat) byCat[k]=(byCat[k]||0)+a.byCat[k] }
-  const n=ms.length;
-  const byCatAvg={}; for(const k in byCat) byCatAvg[k]=byCat[k]/n;
-  return { incAvg:inc/n, expAvg:exp/n, byCatAvg, ms, n };
+  let withData=0;
+  for(const {y,m} of ms){ const k=txForMonth(y,m);
+    if(k.length) withData++;
+    const a=agg(k); inc+=a.inc; exp+=a.exp;
+    for(const c in a.byCat) byCat[c]=(byCat[c]||0)+a.byCat[c] }
+  const totN=ms.length;
+  const n=withData||1;                    /* never divide by zero */
+  const byCatAvg={}, byCatTotals={}; for(const k in byCat){ byCatAvg[k]=byCat[k]/n; byCatTotals[k]=byCat[k] }
+  return { ms, n, withData, totN, coverage:withData/totN,
+    /* is this a full trailing-12 picture, or a part-year one? coveredMonths is the
+       inclusive span the user's records occupy, used to explain gaps honestly. */
+    coveredMonths: (()=>{ const f=state.tx.reduce((a,x)=>a&&a<x.date?a:x.date,null);
+      if(!f) return 0;
+      const now=new Date(), s=new Date(f+'T00:00:00');
+      return (now.getFullYear()-s.getFullYear())*12 + (now.getMonth()-s.getMonth()) + 1 })(),
+    incAvg:inc/n, expAvg:exp/n, byCatAvg, incTotal:inc, expTotal:exp, byCatTotals,
+    avgBasis: withData? 'recorded months' : 'no data' };
 }
 function latestMonthWithTx(){ let best=null; for(const t of state.tx){ const p=txYM(t);
     if(!best || p.y>best.y || (p.y===best.y && p.m>best.m)) best=p } return best }
@@ -126,6 +150,21 @@ function monthOptions(sel){ let h=''; const seen={};
 function yearOptions(sel){ const ys=[...new Set(state.tx.map(t=>txYM(t).y))].sort((a,b)=>b-a);
   if(!ys.length) ys.push(new Date().getFullYear());
   return ys.map(y=>`<option value="${y}" ${y===sel?'selected':''}>${y}</option>`).join('') }
+
+/* ----------------------------------------------------------------
+   Coverage helpers — a trailing-12 figure is only as good as how much
+   of the window is actually populated. These keep that visible.
+---------------------------------------------------------------- */
+function coverageIsPartial(t){ t=t||t12(); return t.withData>0 && t.withData<t.totN }
+function coverageNote(t){ t=t||t12();
+  if(!t.withData) return 'no data recorded yet';
+  if(t.withData>=t.totN) return 'all 12 months recorded';
+  return 'averaged over '+t.withData+' of the last 12 months';
+}
+function coverageChip(t){ t=t||t12();
+  const cls = !t.withData? 'grey' : t.withData>=10? 'green' : t.withData>=6? 'amber' : 'red';
+  return `<span class="chip ${cls}" title="Trailing-12 averages divide by the months that actually contain entries">📅 ${coverageNote(t)}</span>`;
+}
 
 /* ---------------- classification ---------------- */
 function guessCat(text){

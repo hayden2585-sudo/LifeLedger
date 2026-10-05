@@ -90,6 +90,7 @@ function renderPlan(){
   el.innerHTML=`
   <div class="card">
     <div class="cardhead"><h3 style="margin:0">💡 Where you stand</h3><span class="grow"></span>
+      ${coverageChip(t)}
       <span class="chip ${surplusCard?'green':'red'}">${surplusCard? 'Surplus':'Deficit'}</span></div>
     <div class="kpis" style="margin-bottom:10px">
       <div class="kpi"><div class="lbl">Take-home (avg)</div><div class="v">${fmt0(t.incAvg)}</div><div class="sub">per month</div></div>

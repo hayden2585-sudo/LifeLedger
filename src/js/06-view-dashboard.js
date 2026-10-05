@@ -43,11 +43,11 @@ function renderDash(){
     <h3 style="margin:0">Month at a glance</h3>
     <select style="width:auto" onchange="UI.month=parseMK(this.value);renderAll()">${monthOptions(y+'-'+m)}</select>
     <span class="chip grey">Trailing-12 avg income ${fmt0(t.incAvg)}/mo · expenses ${fmt0(t.expAvg)}/mo</span>
+    ${coverageChip(t)}
   </div>
   <div class="kpis">
     ${kpi('Take-home income', fmt0(st.inc), 'T12 avg '+fmt0(t.incAvg))}
-    ${kpi('Expenses', fmt0(st.exp), 'T12 avg '+fmt0(t.expAvg))}
-    ${kpi(net>=0?'Surplus':'Deficit', fmt0(net), net>=0?'Keep it up 👍':'Watch this ⚠️', net>=0?'pos':'neg')}
+    ${kpi('Expenses', fmt0(st.exp), 'T12 avg '+fmt0(t.expAvg))}    ${kpi(net>=0?'Surplus':'Deficit', fmt0(net), net>=0?'Keep it up 👍':'Watch this ⚠️', net>=0?'pos':'neg')}
     ${kpi('Unspent income', unspent==null?'—':unspent.toFixed(1)+'%', unspent==null?'':'of what came in', unspent!=null&&unspent<0?'neg':'')}
     ${kpi('Budget adherence', st.adherence==null?'—':st.adherence.toFixed(0)+'%', st.over.length? st.over.length+' categorie(s) over':'All within budget', st.over.length?'neg':'pos')}
     ${kpi('Year '+y+' net', fmt0(yearAgg.inc-yearAgg.exp), 'income '+fmt0(yearAgg.inc)+' · expenses '+fmt0(yearAgg.exp))}
