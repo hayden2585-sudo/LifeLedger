@@ -44,22 +44,34 @@ function minWageNumbers(){
   return {hourly:+S.minWageHourly||0, grossM, netM};
 }
 function pctMinWage(amountM){ const mw=minWageNumbers(); return mw.netM>0? amountM/mw.netM*100 : 0 }
-/* the heart of the Income Map */
+
+/* ----------------------------------------------------------------
+   IMPROVEMENT 6 — Income map recurring-only toggle
+   incomeMapNumbers() now respects UI.incomeMapBase:
+     't12'     → trailing-12 average income (original behaviour)
+     'streams' → sum of recurring income streams only (better for
+                 users with irregular windfalls in their T12 history)
+---------------------------------------------------------------- */
 function incomeMapNumbers(){
   const t=t12();
   const streamsMonthly=state.streams.reduce((a,s)=>a+(+s.monthly||0),0);
-  const netMonthly = t.incAvg>0? t.incAvg : streamsMonthly;
-  const lifestyleM = t.expAvg;                       /* all recorded outflows incl. savings allocations */
+  /* base income: T12 average OR recurring streams only */
+  const useStreams = (UI.incomeMapBase==='streams');
+  const netMonthly = useStreams
+    ? (streamsMonthly || t.incAvg)          /* fall back to T12 if no streams defined */
+    : (t.incAvg>0? t.incAvg : streamsMonthly);
+  const lifestyleM = t.expAvg;
   const savingsAllocM = t.byCatAvg.savings||0;
   const coreLifestyleM = lifestyleM - savingsAllocM;
   const savingsGoalM = netMonthly*state.settings.savingsTargetPct/100;
   const S=state.settings;
-  const needLifestyle = lifestyleM*12;               /* keep current lifestyle exactly */
+  const needLifestyle = lifestyleM*12;
   const needWithSavings = (lifestyleM+savingsGoalM)*12;
   const needComfort = needWithSavings*1.10;
   const netAnnual=netMonthly*12;
   return { t, netMonthly, streamsMonthly, lifestyleM, coreLifestyleM, savingsAllocM, savingsGoalM,
     needLifestyle, needWithSavings, needComfort, netAnnual,
+    usingStreams: useStreams,
     grossCurrent: grossForNet(Math.max(1,netAnnual)),
     grossLifestyle: grossForNet(Math.max(1,needLifestyle)),
     grossWithSavings: grossForNet(Math.max(1,needWithSavings)),
@@ -67,3 +79,163 @@ function incomeMapNumbers(){
     gapMonthly: netMonthly-lifestyleM };
 }
 
+/* ================================================================
+   PROACTIVE ALERTS  (IMPROVEMENT 6)
+   The app already knows when a budget is overspent, when a project
+   is behind and when data has gaps — but it only said so once you
+   navigated to that view. alertsFor() turns those known facts into a
+   ranked, actionable list the Dashboard can surface immediately.
+
+   Severity drives ordering and colour only; nothing here mutates
+   state. Every alert carries an optional `go` view so the UI can
+   offer a one-click route to the fix.
+   ================================================================ */
+const SEV_RANK={critical:0,warn:1,info:2};
+/* Which ledger entries count as postings of a given income stream?
+   Stream id is authoritative, but entries created by the sample data, by CSV/OCR
+   import or before v1.2 carry no streamId — for those, a distinctive first word of
+   the stream label ("Salary (net take-home)" → "salary") is matched against the
+   entry's vendor text, so a stream that IS being posted is not reported as silent. */
+function txMatchesStream(t,s){
+  if(t.cat!=='income') return false;
+  if(t.streamId) return t.streamId===s.id;
+  const word=String(s.label||'').toLowerCase().split(/[^a-z]+/).filter(w=>w.length>3)[0];
+  if(!word) return false;
+  return ((t.sub||'')+' '+(t.desc||'')).toLowerCase().includes(word);
+}
+function streamPostings(s){ return state.tx.filter(t=>txMatchesStream(t,s)) }
+function alertsFor(){
+  const out=[];
+  const now=new Date();
+  const mk=UI.month||{y:now.getFullYear(), m:now.getMonth()};
+  const daysInMonth=new Date(mk.y, mk.m+1, 0).getDate();
+  const isCurrentMonth = mk.y===now.getFullYear() && mk.m===now.getMonth();
+  const st=monthStats(mk.y, mk.m);
+
+  /* --- budget overages, with the remaining-days context --- */
+  for(const o of st.over){
+    const left=(isCurrentMonth? daysInMonth-now.getDate(): 0);
+    out.push({ key:'budget:'+o.cat, sev:'warn', view:'budgets', icon:'🎯',
+      title:catName(o.cat)+' is over budget',
+      detail:`${fmt0(o.act)} spent against a ${fmt0(o.bud)} budget — ${fmt0(o.by)} over in ${MONTHS[mk.m]} ${mk.y}`
+        + (left>0? `, with ${left} day${left===1?'':'s'} still to go` : '')+'.' });
+  }
+
+  /* --- data gaps: a month with nothing recorded breaks the T12 averages --- */
+  const t=t12();
+  const empty=[];
+  for(const {y,m} of t.ms){ if(!txForMonth(y,m).length) empty.push(MONTHS[m]+' '+y) }
+  if(empty.length){
+    out.push({ key:'gap:months', sev: empty.length>=2?'warn':'info', view:'grid', icon:'🗓️',
+      title: empty.length===1? 'One month has no entries' : empty.length+' months have no entries',
+      detail: empty.slice(0,4).join(', ')+(empty.length>4? ' +'+(empty.length-4)+' more' : '')
+        +' — trailing-12 averages treat those as zero spend.' });
+  }
+
+  /* --- recurring income streams that stopped posting --- */
+  const cutoff=new Date(now.getFullYear(), now.getMonth()-2, 1);
+  for(const s of state.streams){
+    const posts=streamPostings(s);
+    const last=posts.reduce((a,x)=> a&&a>x.date? a : x.date, null);
+    if(!last || last < iso(cutoff)){
+      out.push({ key:'stream:'+s.id, sev:(+s.monthly||0)>0?'warn':'info', view:'income', icon:'🔁',
+        title:'Income stream “'+s.label+'” has no recent entries',
+        detail: (last? 'Last posted '+last+'. ' : 'Never posted to the ledger. ')
+          +'Planned at '+fmt0(+s.monthly||0)+'/mo — use “Post this month” on the Income Map.' });
+    }
+  }
+
+  /* --- projects: over budget, or finished but not yet archived --- */
+  for(const p of (state.projects||[])){
+    if(p.archived) continue;
+    const f=projectFunding(p);
+    if(f.budget>0 && f.remaining<0 && p.status!=='cancelled'){
+      out.push({ key:'projover:'+p.id, sev:'warn', view:'projects', icon:projectTypeEmoji(p.type),
+        title:'“'+p.name+'” is over its project budget',
+        detail:'Spent '+fmt0(f.actual)+' of '+fmt0(f.budget)+' — '+fmt0(-f.remaining)+' over. Raise the budget or re-scope the line items.' });
+    }
+    if(p.status==='completed'){
+      out.push({ key:'projdone:'+p.id, sev:'info', view:'projects', icon:'✅',
+        title:'“'+p.name+'” is marked completed',
+        detail:'Spend '+fmt0(f.actual)+' vs budget '+fmt0(f.budget)+'. Archive it to clear the working list and keep a permanent summary.' });
+    }
+  }
+
+  /* --- cashflow direction for the selected month --- */
+  if(st.inc>0 && st.exp>st.inc){
+    out.push({ key:'cashflow:'+mk.y+'-'+mk.m, sev:'warn', view:'plan', icon:'📉',
+      title:MONTHS[mk.m]+' '+mk.y+' spent more than it earned',
+      detail:'Outflows '+fmt0(st.exp)+' against inflows '+fmt0(st.inc)+' — a deficit of '+fmt0(st.exp-st.inc)+'. Plan & Advice ranks the fixes.' });
+  }
+  if(st.exp>0 && st.inc===0){
+    out.push({ key:'noincome:'+mk.y+'-'+mk.m, sev:'info', view:'ledger', icon:'🔍',
+      title:'No income recorded for '+MONTHS[mk.m]+' '+mk.y,
+      detail:'Expenses of '+fmt0(st.exp)+' were recorded with no matching income — check whether payday entries are missing.' });
+  }
+
+  return out.sort((a,b)=> SEV_RANK[a.sev]-SEV_RANK[b.sev] );
+}
+/* alerts the user has not muted this session, plus the per-tab badge count */
+function visibleAlerts(){ const d=UI.alertsDismissed||{}; return alertsFor().filter(a=>!d[a.key]) }
+function alertCountFor(view){ return visibleAlerts().filter(a=>a.view===view).length }
+function dismissAlert(key){ UI.alertsDismissed=UI.alertsDismissed||{}; UI.alertsDismissed[key]=1; renderAll() }
+function restoreAlerts(){ UI.alertsDismissed={}; renderAll(); toast('Muted alerts restored') }
+
+/* ================================================================
+   DATA HEALTH  (IMPROVEMENT 11)
+   A compact integrity score for the numbers the rest of the app
+   derives. Trailing-12 averages, guideline budgets and the income
+   map are only as trustworthy as the coverage behind them.
+   ================================================================ */
+function dataHealth(){
+  const t=t12();
+  const monthsChecked=t.ms.length;
+  const withData=t.ms.filter(({y,m})=>txForMonth(y,m).length);
+  const missing=[], emptyBoth=[];
+  for(const {y,m} of t.ms){
+    const imp=txForMonth(y,m);
+    if(!imp.length){ missing.push({y,m,label:MONTHS[m]+' '+y}); continue }
+    if(!imp.some(x=>x.cat==='income')) emptyBoth.push({y,m,label:MONTHS[m]+' '+y, kind:'no income'});
+    else if(!imp.some(x=>x.cat!=='income')) emptyBoth.push({y,m,label:MONTHS[m]+' '+y, kind:'no expenses'});
+  }
+  const streams=state.streams.map(s=>{
+    const posts=streamPostings(s);
+    const last=posts.reduce((a,x)=> a&&a>x.date? a : x.date, null);
+    const posted12=posts.filter(x=>txYM(x).y>=t.ms[0].y).length;
+    return { label:s.label, monthly:+s.monthly||0, last, posted12, ok: !!last && posted12>0 };
+  }).sort((a,b)=> (a.ok?1:0)-(b.ok?1:0));
+
+  const income=state.tx.filter(x=>x.cat==='income').length, expense=state.tx.length-income;
+  const unclassified=state.tx.filter(x=>x.cat==='other').length;
+  const linked=state.tx.filter(x=>x.projectId).length;
+  const attributed=state.tx.filter(x=>x.memberId).length;
+  const budgeted=EXPENSE_CATS.filter(c=>+state.budgets[c.id]>0).length;
+
+  const checks=[
+    { id:'coverage', ok: missing.length===0, sev: missing.length>=3?'warn':'info', label:'Month-by-month coverage',
+      detail: missing.length? missing.length+' of the last '+monthsChecked+' months have no entries ('+missing.slice(0,3).map(x=>x.label).join(', ')+(missing.length>3?'…':'')+').'
+        : 'All '+monthsChecked+' months in the trailing-12 window have entries.' },
+    { id:'direction', ok: emptyBoth.length===0, sev:'warn', label:'Every month has both income and expenses',
+      detail: emptyBoth.length? emptyBoth.slice(0,3).map(x=>x.label+' has '+x.kind).join('; ')+(emptyBoth.length>3?'…':'')+'.'
+        : 'No month is missing one side of the ledger.' },
+    { id:'streams', ok: streams.length>0 && streams.every(s=>s.ok), sev:'info', label:'Recurring income streams are posting',
+      detail: !streams.length? 'No income streams defined — the Income Map has no baseline to plan against.'
+        : streams.filter(s=>!s.ok).length? streams.filter(s=>!s.ok).map(s=>'“'+s.label+'”'+(s.last?' last posted '+s.last:' never posted')).join('; ')+'.'
+        : 'All '+streams.length+' streams have posted inside the window.' },
+    { id:'classification', ok: unclassified===0, sev:'info', label:'No unclassified spending',
+      detail: unclassified? unclassified+' entr'+(unclassified===1?'y is':'ies are')+' filed under “Other / unclassified”, worth '+fmt0(state.tx.filter(x=>x.cat==='other').reduce((a,x)=>a+x.amt,0))+'.'
+        : 'Every entry has a real category.' },
+    { id:'budgets', ok: budgeted>=8, sev:'info', label:'Budget coverage',
+      detail: budgeted? budgeted+' of '+EXPENSE_CATS.length+' expense categories have a monthly budget.'
+        : 'No monthly budgets set — Budgets ▸ Apply guideline budgets creates a starting set.' },
+    { id:'attribution', ok: (state.household.members.length<2)||attributed>0, sev:'info', label:'Household attribution in use',
+      detail: state.household.members.length<2? 'Single-contributor household — attribution is optional.'
+        : attributed? attributed+' entr'+(attributed===1?'y is':'ies are')+' attributed to a member; '+linked+' linked to a project.'
+        : state.household.members.length+' members defined but no expense is attributed to any of them.' }
+  ];
+  const score=checks.filter(c=>c.ok).length;
+  return { checks, score, total:checks.length, pct: Math.round(score/checks.length*100),
+    monthsChecked, monthsWithData:withData.length, missing, emptyBoth, streams,
+    counts:{ income, expense, unclassified, linked, attributed, budgeted, projects:(state.projects||[]).length,
+      archived:(state.projects||[]).filter(p=>p.archived).length, members:state.household.members.length } };
+}

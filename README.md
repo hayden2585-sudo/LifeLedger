@@ -57,7 +57,7 @@ lifeledger/
 │   ├── package.json
 │   └── www/                   ← web assets (from `npm run build`)
 ├── tools/gen-icons.mjs        ← regenerates the PNG icon set (pure Node)
-└── tests/                     ← jsdom suites (70+ checks) · `npm test`
+└── tests/                     ← jsdom suites (166 checks) · `npm test`
 ```
 
 ## 2 · Quick start (no installation)
@@ -144,7 +144,7 @@ not persist — export before closing.**
 
 ```bash
 npm install        # jsdom (dev-only)
-npm test           # 78 jsdom checks against web/lifeledger.html
+npm test           # 166 jsdom checks against web/lifeledger.html
 node tools/gen-icons.mjs   # regenerate icon PNGs after changing the logo logic
 node server.mjs    # serve PWA at http://127.0.0.1:8080
 ```
@@ -159,10 +159,11 @@ node server.mjs    # serve PWA at http://127.0.0.1:8080
 
 ## 7 · Feature map
 
-Dashboard (KPIs, donut, 12-month bars, overages) · Ledger (search/filter/edit + household/project attribution) ·
-Annual Grid (17+2 categories × 12 months, live totals, editable budgets, drill-down) ·
-Budgets (guideline-based, over/under chips) · Household (multiple contributors, income attribution, member spending) ·
-Projects (finite budgets, line items, priority/status lifecycle, linked actuals, derived funding projection) ·
+Dashboard (proactive alert panel with tab badges, KPIs, donut, 12-month bars, overages, data-health score) ·
+Ledger (search/filter/edit + household/project attribution) ·
+Annual Grid (17+2 categories × 12 months, live totals, editable budgets, drill-down, year-over-year comparison, data-health panel) ·
+Budgets (guideline-based, over/under chips) · Household (multiple contributors, income attribution, member spending, **spending split chart**) ·
+Projects (finite budgets, line items, priority/status lifecycle, **completion archive with frozen final figures and restore**, linked actuals, derived funding projection) ·
 Income Map (tax inversion, needs ladder, cost-of-living equation, self-employed revenue targets, **minimum-wage lens**, income-type mix) ·
 Plan & Advice (surplus → investment playbook; deficit → ranked saving strategies,
 stress test, what-if cuts) · Add Data (manual, invoice/screenshot + OCR, email/text
@@ -170,6 +171,9 @@ parser, CSV import) · special events & religion/charity groups (zero by default
 subtypes for salary/wages, side hustles, salary arrears, overtime/extra duties, dividends,
 sale of assets, gratuity, welfare benefits, rental income, and gifts/remittances (including
 money sent from abroad).
+
+**Status:** release 1.4.0 adds the proactive alerts panel, data health check, year-over-year comparison,
+household spending split, project archive lifecycle and the storage-loss warning. See the changelog.
 
 **Disclaimer:** educational tool — not financial, tax or investment advice.
 
@@ -181,6 +185,38 @@ The important separation is: **GitHub distributes application code; each device 
 
 ## 9 · Changelog
 
+**1.4.0** — proactive insight & data integrity
+- **Proactive alerts panel** on the Dashboard. Life Ledger already knew when a budget was overspent, a
+  project was over, or an income stream had gone quiet — but only said so once you navigated to that
+  view. Alerts are now derived live, ranked by urgency, each with a one-click route to the fix, a
+  per-session mute, and a **count badge on the affected nav tab**. Nothing to configure.
+- **Data health check** (Annual Grid, with a score chip on the Dashboard): month-by-month coverage of
+  the trailing-12 window, months missing income or expenses, income streams that have stopped posting,
+  unclassified spending, budget coverage and household attribution — each with the fix that resolves it.
+  Trailing-12 averages, guideline budgets and the income map are only as trustworthy as the coverage
+  behind them.
+- **Year-over-year comparison** in the Annual Grid: the current year against any other recorded year by
+  group and category, with **per-month** columns that divide by the months actually covered, so a
+  part-year dataset is neither flattered nor penalised, plus a plain-language verdict and income/spend/net
+  KPIs for both years.
+- **Household spending split chart**: a stacked bar and share donut of who spent what, with unattributed
+  spending shown explicitly rather than hidden, an attribution-coverage chip, and a per-contributor table.
+- **Project completion is now a real lifecycle step.** Marking a project Completed (or Cancelled) archives
+  it: the final budget, actual spend, variance, line-item breakdown and duration are frozen into a
+  collapsed **Project archive** with portfolio totals, and the project leaves the working list. Ledger
+  entries are never deleted — only the link is released so ordinary monthly category aggregation is
+  unchanged — and **Restore** re-links every entry. Projects already marked completed in older saves are
+  archived automatically on load.
+- **Storage-loss warning is now impossible to miss**: a blocking, acknowledge-or-export modal on load
+  when localStorage is unavailable, instead of a badge nobody reads. Shown once per session.
+- **Sample data now demonstrates the newer branches** — two named household contributors with attributed
+  income and expenses, one active renovation project with line items and a funding plan, and one archived
+  Christmas project — so the Household split, project archive and alert engine are all visible on first run.
+- **CSV export keeps attribution**: `household_member`, `project`, `project_item` and `income_type` were
+  previously stripped at export; they are now included, and a spend on a project that has since been
+  archived still resolves its project name.
+- Regression coverage grew from 82 to 166 jsdom checks, including a new `tests/smoke4.cjs` suite for the
+  six enhancements plus migration, archive and restore round-trips.
 **1.3.0** — household + projects expansion
 - Added a **Household** branch with contributor/member attribution for working couples, remote professionals, stay-at-home professionals and other household contributors.
 - Added a **Projects & special budgets** branch for finite goals such as home repairs, refurbishments, events, major purchases and emergency work.

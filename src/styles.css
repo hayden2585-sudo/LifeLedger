@@ -116,6 +116,28 @@ table.sheet td.cellhit:hover{background:#e9efff}
 .over{color:var(--red);font-weight:600}
 .under{color:var(--green)}
 
+/* ---------- proactive alerts (dashboard) ---------- */
+.alertrow{display:flex;gap:11px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-left-width:4px;border-radius:10px;margin-bottom:8px;background:#fff}
+.alertrow.warn{border-left-color:#e0a13a;background:#fffdf7}
+.alertrow.critical{border-left-color:var(--red);background:#fff7f7}
+.alertrow.info{border-left-color:#8fa4d8}
+.alertrow .alertico{font-size:16px;line-height:1.3}
+.alertrow .alertbody{flex:1;min-width:0}
+.alertrow .alerttitle{font-size:13px;font-weight:600;margin-bottom:2px}
+.alertrow .alertdetail{line-height:1.5}
+.alertrow .alertacts{display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap}
+.tabbadge{display:inline-block;min-width:17px;margin-left:6px;padding:1px 5px;border-radius:20px;background:#e05252;color:#fff;font-size:10.5px;font-weight:700;text-align:center;vertical-align:1px}
+.tab.active .tabbadge{background:var(--brand)}
+
+/* ---------- year-over-year + member split ---------- */
+.delta-up{color:var(--red)} .delta-down{color:var(--green)} .delta-flat{color:var(--mut)}
+.splitbar{display:flex;height:22px;border-radius:6px;overflow:hidden;border:1px solid var(--line);margin:6px 0}
+.splitbar i{display:block;height:100%}
+@media (max-width:760px){
+  .alertrow{flex-wrap:wrap}
+  .alertrow .alertacts{margin-left:27px}
+}
+
 /* budget cards */
 .bcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
 .bcard{border:1px solid var(--line);border-radius:11px;padding:12px 13px;background:#fff}

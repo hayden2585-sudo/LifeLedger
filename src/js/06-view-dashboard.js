@@ -35,7 +35,10 @@ function renderDash(){
   const bars=t.ms.map(mm=>({label:MONTHS[mm.m], inc:agg(txForMonth(mm.y,mm.m)).inc, exp:agg(txForMonth(mm.y,mm.m)).exp}));
   const yearAgg=agg(txForYear(y));
   const kpi=(lbl,val,sub,cls)=>`<div class="kpi"><div class="lbl">${lbl}</div><div class="v ${cls||''}">${val}</div><div class="sub">${sub||''}</div></div>`;
+  const shownAlerts=visibleAlerts();
+  const health=dataHealth();
   el.innerHTML=`
+  ${alertPanelHTML(shownAlerts, health, alertsFor())}
   <div class="cardhead">
     <h3 style="margin:0">Month at a glance</h3>
     <select style="width:auto" onchange="UI.month=parseMK(this.value);renderAll()">${monthOptions(y+'-'+m)}</select>
@@ -98,5 +101,51 @@ function renderDash(){
     </div>
   </div>`;
 }
+/* ================================================================
+   PROACTIVE ALERTS PANEL  (IMPROVEMENT 6)
+   Renders the ranked alert list at the top of the Dashboard so the
+   app tells you what needs attention instead of waiting to be asked.
+   ================================================================ */
+function alertPanelHTML(alerts, health, all){
+  all = all || alertsFor();
+  const muted=all.length-alerts.length;
+  const crit=alerts.filter(a=>a.sev==='critical').length;
+  const warn=alerts.filter(a=>a.sev==='warn').length;
+  const info=alerts.filter(a=>a.sev==='info').length;
+  const sorted=[...alerts].sort((a,b)=>SEV_RANK[a.sev]-SEV_RANK[b.sev]);
+  const shown=sorted.slice(0,4);
+  const rest=sorted.slice(4);
+  const row=a=>`
+    <div class="alertrow ${a.sev}" id="al-${esc(a.key).replace(/[^a-z0-9]/gi,'_')}">
+      <span class="alertico">${a.icon||'•'}</span>
+      <div class="alertbody">
+        <div class="alerttitle">${esc(a.title)}</div>
+        <div class="alertdetail small mut">${esc(a.detail)}</div>
+      </div>
+      <div class="alertacts">
+        ${a.view?`<button class="btn ghost small" onclick="showView('${a.view}')">Open</button>`:''}
+        <button class="btn ghost small" title="Mute until reload" onclick="dismissAlert('${esc(a.key)}')">✕</button>
+      </div>
+    </div>`;
+  const head=`<div class="cardhead"><h3 style="margin:0">🔔 Needs your attention</h3>
+      <span class="grow"></span>
+      ${crit?`<span class="chip red">${crit} critical</span>`:''}
+      ${warn?`<span class="chip amber">${warn} to watch</span>`:''}
+      ${info?`<span class="chip grey">${info} for review</span>`:''}
+      <span class="chip ${health.pct>=85?'green':health.pct>=60?'amber':'red'}" title="Data health: ${health.score} of ${health.total} checks pass">📋 data health ${health.pct}%</span>
+      ${muted?`<button class="btn ghost small" onclick="restoreAlerts()">↺ ${muted} muted</button>`:''}
+    </div>`;
+  if(!all.length){
+    return `<div class="card"><div class="cardhead"><h3 style="margin:0">🔔 Needs your attention</h3><span class="grow"></span>
+      <span class="chip ${health.pct>=85?'green':'amber'}">📋 data health ${health.pct}%</span></div>
+      <p class="mut small" style="margin:4px 0 0">Nothing is asking for a decision right now — every budget is inside its limit, no project is over, and the trailing-12 window has data in it. 🎉</p></div>`;
+  }
+  return `<div class="card"><div id="alertPanelHead">${head}</div>
+    ${shown.map(row).join('')}
+    ${rest.length?`<details class="sec" style="margin-top:6px"><summary>${rest.length} more alert${rest.length===1?'':'s'} to review</summary><div class="inner">${rest.map(row).join('')}</div></details>`:''}
+    <p class="hint" style="margin:8px 0 0">Alerts are derived live from your ledger, budgets, income streams and projects — they need no setup and are muted only for this session. Educational guidance, not financial advice.</p>
+  </div>`;
+}
 function parseMK(v){ const p=v.split('-'); return {y:+p[0], m:+p[1]} }
+
 

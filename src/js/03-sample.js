@@ -6,6 +6,22 @@ function buildSample(){
   const J=(base,pct)=>base*(1+(Math.random()*2-1)*pct);
   const pick=arr=>arr[Math.floor(Math.random()*arr.length)];
   const now=new Date();
+  /* named contributors + a real project and a finished one, so the Household
+     split chart, the project archive and the alert engine all demonstrate */
+  const p1={id:uid(),name:'Hayden',role:'Primary',active:true};
+  const p2={id:uid(),name:'Simone',role:'Partner / spouse',active:true};
+  const salaryStreamId=uid(), gigStreamId=uid();
+  const roofId=uid(), roofItemA=uid(), roofItemB=uid(), xmasId=uid();
+  const roof={id:roofId,name:'Downstairs bathroom refurbishment',type:'home',priority:'high',status:'active',
+    startDate:iso(new Date(now.getFullYear(), now.getMonth()-2, 1)),targetDate:'',
+    baseBudget:0,notes:'',archived:false,completedAt:null,
+    items:[{id:roofItemA,name:'Tiling & waterproofing',budget:9500,notes:''},{id:roofItemB,name:'Plumber & labour',budget:6500,notes:''}],
+    fundingPlan:{enabled:true,startingReserve:2500,oneTimeContribution:0,surplusAllocationPct:25,fixedMonthlyContribution:0}};
+  const xmas={id:xmasId,name:'Christmas 2025 — gifts & hosting',type:'event',priority:'normal',status:'completed',
+    startDate:iso(new Date(now.getFullYear(), now.getMonth()-4, 1)),targetDate:iso(new Date(now.getFullYear(), now.getMonth()-2, 20)),
+    baseBudget:3800,notes:'',archived:true,completedAt:iso(new Date(now.getFullYear(), now.getMonth()-2, 20)),
+    items:[],
+    fundingPlan:{enabled:false,startingReserve:0,oneTimeContribution:0,surplusAllocationPct:0,fixedMonthlyContribution:0}};
   for(let i=12;i>=0;i--){
     const base=new Date(now.getFullYear(), now.getMonth()-i, 1);
     const y=base.getFullYear(), m=base.getMonth();
@@ -59,21 +75,32 @@ function buildSample(){
     add(D(25),'savings','Credit union','Automatic savings transfer', raised?700:500);
   }
   function randDay(a,b){ return a+Math.floor(Math.random()*(b-a+1)) }
+  /* household + project + income-stream attribution over the generated rows */
+  for(const t of tx){
+    if(t.cat==='income'){ t.memberId=p1.id; t.streamId=(t.sub==='Salary'? salaryStreamId : gigStreamId); continue }
+    if(t.cat==='savings'){ t.projectId=roofId; continue }
+    if(t.cat==='upkeep'){ t.projectId=roofId; t.projectItemId=(Math.random()<0.5?roofItemA:roofItemB); continue }
+    if(['dining','toiletries','transport','parties'].includes(t.cat)) t.memberId=p2.id;
+  }
   const budgets={ loans:5250, groceries:1750, utilities:1150, auto:700, insurance:900, transport:260, dining:620,
     toiletries:220, subscriptions:185, entertainment:580, parties:420, education:200, medical:220, upkeep:260, savings:600, taxes:80, income:0 };
-  const streams=[ {id:uid(),label:'Salary (net take-home)',monthly:14456}, {id:uid(),label:'Side gigs (average)',monthly:850} ];
-  return {tx, budgets, streams};
+  const streams=[ {id:salaryStreamId,label:'Salary (net take-home)',monthly:14456,memberId:p1.id,incomeType:'salary'},
+                  {id:gigStreamId,label:'Side gigs (average)',monthly:850,memberId:p1.id,incomeType:'side_hustle'} ];
+  return {tx, budgets, streams, household:{members:[p1,p2]}, projects:[roof,xmas]};
 }
 function loadSample(){
   state = freshState();
   const s = buildSample();
-  state.tx = s.tx; state.budgets = s.budgets; state.streams = s.streams; state.meta.sample = true;
+  state.tx = s.tx; state.budgets = s.budgets; state.streams = s.streams;
+  state.household = s.household || {members:[]}; state.projects = s.projects || [];
+  state.meta.sample = true;
   store.save(); bootTimeDefaults(); renderAll(); toast('Sample data loaded — explore, then “Clear sample data” when ready');
 }
 function clearSample(btn){
   if(state.meta.sample){
     if(btn && !btn.dataset.armed){ btn.dataset.armed='1'; btn.textContent='Click again to confirm'; setTimeout(()=>{btn.dataset.armed='';btn.textContent='🧹 Clear sample data'},2600); return }
-    state.tx=[]; state.budgets={}; state.streams=[]; state.meta.sample=false; store.save(); bootTimeDefaults(); renderAll(); toast('Sample data cleared — add your own entries');
+    state.tx=[]; state.budgets={}; state.streams=[]; state.household={members:[]}; state.projects=[];
+    state.meta.sample=false; store.save(); bootTimeDefaults(); renderAll(); toast('Sample data cleared — add your own entries');
   }
 }
 function resetAll(btn){

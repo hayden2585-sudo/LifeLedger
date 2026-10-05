@@ -123,6 +123,28 @@ table.sheet td.cellhit:hover{background:#e9efff}
 .over{color:var(--red);font-weight:600}
 .under{color:var(--green)}
 
+/* ---------- proactive alerts (dashboard) ---------- */
+.alertrow{display:flex;gap:11px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-left-width:4px;border-radius:10px;margin-bottom:8px;background:#fff}
+.alertrow.warn{border-left-color:#e0a13a;background:#fffdf7}
+.alertrow.critical{border-left-color:var(--red);background:#fff7f7}
+.alertrow.info{border-left-color:#8fa4d8}
+.alertrow .alertico{font-size:16px;line-height:1.3}
+.alertrow .alertbody{flex:1;min-width:0}
+.alertrow .alerttitle{font-size:13px;font-weight:600;margin-bottom:2px}
+.alertrow .alertdetail{line-height:1.5}
+.alertrow .alertacts{display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap}
+.tabbadge{display:inline-block;min-width:17px;margin-left:6px;padding:1px 5px;border-radius:20px;background:#e05252;color:#fff;font-size:10.5px;font-weight:700;text-align:center;vertical-align:1px}
+.tab.active .tabbadge{background:var(--brand)}
+
+/* ---------- year-over-year + member split ---------- */
+.delta-up{color:var(--red)} .delta-down{color:var(--green)} .delta-flat{color:var(--mut)}
+.splitbar{display:flex;height:22px;border-radius:6px;overflow:hidden;border:1px solid var(--line);margin:6px 0}
+.splitbar i{display:block;height:100%}
+@media (max-width:760px){
+  .alertrow{flex-wrap:wrap}
+  .alertrow .alertacts{margin-left:27px}
+}
+
 /* budget cards */
 .bcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
 .bcard{border:1px solid var(--line);border-radius:11px;padding:12px 13px;background:#fff}
@@ -335,7 +357,7 @@ function freshState(){
       taxAllowance:90000, taxRate:25,
       nisPct:5.4, nisCeilingMonthly:13600, healthSurchargeWeekly:8.25, payrollDeductionPct:0,
       savingsTargetPct:10, emergencyMonths:4, businessMarginPct:35, minWageHourly:20.50 },
-    streams:[], tx:[], budgets:{}, household:{members:[]}, projects:[],
+    streams:[], recurringExpenses:[], tx:[], budgets:{}, household:{members:[]}, projects:[],
     meta:{ created:Date.now(), sample:false, init:true }
   };
 }
@@ -354,11 +376,16 @@ function migrateWorkspace(s){
   if(!s||typeof s!=='object') return s;
   if(!Array.isArray(s.household?.members)) s.household={members:[]};
   if(!Array.isArray(s.projects)) s.projects=[];
+  if(!Array.isArray(s.recurringExpenses)) s.recurringExpenses=[];
   for(const p of s.projects){
     if(!p.items||!Array.isArray(p.items)) p.items=[];
     if(!p.type) p.type='home';
     if(!p.priority) p.priority='normal';
     if(!p.status) p.status='planning';
+    /* projects finished before the archive workflow existed are archived on load,
+       so a completed project never keeps cluttering the working list */
+    if(p.archived===undefined) p.archived = (p.status==='completed');
+    if(p.completedAt===undefined) p.completedAt = p.archived? (p.targetDate||p.startDate||null) : null;
     if(!p.fundingPlan) p.fundingPlan={enabled:false,startingReserve:0,oneTimeContribution:0,surplusAllocationPct:0,fixedMonthlyContribution:0};
   }
   return s;
@@ -381,7 +408,8 @@ function migrateIncomeTypes(s){
 }
 let state = null;
 let UI = { view:'dash', month:null, year:null, gridYear:null, ledgerFilter:{cat:'all',src:'all',q:'',month:'all'}, editingId:null,
-  candidates:[], ocrFile:null, ocrURL:null, stressPct:0, cuts:{}, invReturn:7, invYears:10, invContrib:null, showT12:true };
+  candidates:[], ocrFile:null, ocrURL:null, stressPct:0, cuts:{}, invReturn:7, invYears:10, invContrib:null, showT12:true,
+  incomeMapBase:'t12' /* 't12' | 'streams' */, alertsDismissed:{}, compareYear:null };
 
 /* ---------------- small utils ---------------- */
 const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -454,6 +482,57 @@ function vendorFromEmail(fromLine){
   return dom? dom.charAt(0).toUpperCase()+dom.slice(1) : null;
 }
 
+/* ----------------------------------------------------------------
+   IMPROVEMENT 1 — Storage loss modal
+   A prominent, blocking first-load warning when localStorage is
+   unavailable, so nobody spends an evening entering data that will
+   vanish on close. The old save badge is still there, but nobody
+   reads a badge — this one you have to acknowledge.
+   Called once from boot(); never shown when storage works.
+---------------------------------------------------------------- */
+let storageWarned=false;   /* session-scoped: don't nag on every re-render */
+function showStorageWarning(){
+  if(store.ok || storageWarned) return;
+  storageWarned=true;
+  const m=document.createElement('div');
+  m.id='storageWarnModal';
+  m.setAttribute('role','alertdialog');
+  m.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.7);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px';
+  m.innerHTML=`<div style="background:#fff;border-radius:14px;padding:28px 26px;max-width:480px;box-shadow:0 20px 50px rgba(0,0,0,.3)">
+    <div style="font-size:36px;margin-bottom:10px">⚠️</div>
+    <h2 style="margin:0 0 10px;color:#c62f2f">Data will not be saved</h2>
+    <p style="margin:0 0 14px;font-size:13.5px;line-height:1.6">
+      LifeLedger cannot access your browser's local storage in this environment.
+      Any entries you make <strong>will be lost</strong> when you close this tab.
+    </p>
+    <p style="margin:0 0 18px;font-size:13px;color:#67707f;line-height:1.6">
+      This usually happens when the file is opened from a sandboxed preview, a restricted browser profile,
+      or private/incognito mode. Open the file directly in Chrome, Edge, or Firefox for full storage access.
+      Use <strong>Data ▸ Export JSON</strong> before closing to preserve any work you do now.
+    </p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button onclick="document.getElementById('storageWarnModal').remove()" style="background:#3450b4;color:#fff;border:0;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer">I understand — continue anyway</button>
+      <button onclick="exportJSON();document.getElementById('storageWarnModal').remove()" style="background:#fff;color:#3450b4;border:1px solid #c6cfe6;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer">Export JSON first</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+/* ---- nav tab badges: surface alert counts on the tabs themselves ---- */
+function refreshAlertBadges(){
+  const counts={}; let n=0;
+  for(const a of (typeof visibleAlerts==='function'? visibleAlerts(): [])){ counts[a.view]=(counts[a.view]||0)+1; n++ }
+  document.querySelectorAll('nav#tabs .tab').forEach(b=>{
+    const v=b.dataset.v, c=counts[v]||0;
+    let badge=b.querySelector('.tabbadge');
+    if(c>0){
+      if(!badge){ badge=document.createElement('span'); badge.className='tabbadge'; b.appendChild(badge) }
+      badge.textContent=String(c);
+      badge.title=c+' item(s) need attention on this tab';
+    } else if(badge) badge.remove();
+  });
+  const t=document.querySelector('nav#tabs .tab[data-v="dash"]');
+  if(t) t.title = n? n+' open alert(s) on the dashboard' : 'No open alerts';
+}
 /* ---------------- sample data ---------------- */
 function buildSample(){
   const tx=[]; let n=0;
@@ -462,6 +541,22 @@ function buildSample(){
   const J=(base,pct)=>base*(1+(Math.random()*2-1)*pct);
   const pick=arr=>arr[Math.floor(Math.random()*arr.length)];
   const now=new Date();
+  /* named contributors + a real project and a finished one, so the Household
+     split chart, the project archive and the alert engine all demonstrate */
+  const p1={id:uid(),name:'Hayden',role:'Primary',active:true};
+  const p2={id:uid(),name:'Simone',role:'Partner / spouse',active:true};
+  const salaryStreamId=uid(), gigStreamId=uid();
+  const roofId=uid(), roofItemA=uid(), roofItemB=uid(), xmasId=uid();
+  const roof={id:roofId,name:'Downstairs bathroom refurbishment',type:'home',priority:'high',status:'active',
+    startDate:iso(new Date(now.getFullYear(), now.getMonth()-2, 1)),targetDate:'',
+    baseBudget:0,notes:'',archived:false,completedAt:null,
+    items:[{id:roofItemA,name:'Tiling & waterproofing',budget:9500,notes:''},{id:roofItemB,name:'Plumber & labour',budget:6500,notes:''}],
+    fundingPlan:{enabled:true,startingReserve:2500,oneTimeContribution:0,surplusAllocationPct:25,fixedMonthlyContribution:0}};
+  const xmas={id:xmasId,name:'Christmas 2025 — gifts & hosting',type:'event',priority:'normal',status:'completed',
+    startDate:iso(new Date(now.getFullYear(), now.getMonth()-4, 1)),targetDate:iso(new Date(now.getFullYear(), now.getMonth()-2, 20)),
+    baseBudget:3800,notes:'',archived:true,completedAt:iso(new Date(now.getFullYear(), now.getMonth()-2, 20)),
+    items:[],
+    fundingPlan:{enabled:false,startingReserve:0,oneTimeContribution:0,surplusAllocationPct:0,fixedMonthlyContribution:0}};
   for(let i=12;i>=0;i--){
     const base=new Date(now.getFullYear(), now.getMonth()-i, 1);
     const y=base.getFullYear(), m=base.getMonth();
@@ -515,21 +610,32 @@ function buildSample(){
     add(D(25),'savings','Credit union','Automatic savings transfer', raised?700:500);
   }
   function randDay(a,b){ return a+Math.floor(Math.random()*(b-a+1)) }
+  /* household + project + income-stream attribution over the generated rows */
+  for(const t of tx){
+    if(t.cat==='income'){ t.memberId=p1.id; t.streamId=(t.sub==='Salary'? salaryStreamId : gigStreamId); continue }
+    if(t.cat==='savings'){ t.projectId=roofId; continue }
+    if(t.cat==='upkeep'){ t.projectId=roofId; t.projectItemId=(Math.random()<0.5?roofItemA:roofItemB); continue }
+    if(['dining','toiletries','transport','parties'].includes(t.cat)) t.memberId=p2.id;
+  }
   const budgets={ loans:5250, groceries:1750, utilities:1150, auto:700, insurance:900, transport:260, dining:620,
     toiletries:220, subscriptions:185, entertainment:580, parties:420, education:200, medical:220, upkeep:260, savings:600, taxes:80, income:0 };
-  const streams=[ {id:uid(),label:'Salary (net take-home)',monthly:14456}, {id:uid(),label:'Side gigs (average)',monthly:850} ];
-  return {tx, budgets, streams};
+  const streams=[ {id:salaryStreamId,label:'Salary (net take-home)',monthly:14456,memberId:p1.id,incomeType:'salary'},
+                  {id:gigStreamId,label:'Side gigs (average)',monthly:850,memberId:p1.id,incomeType:'side_hustle'} ];
+  return {tx, budgets, streams, household:{members:[p1,p2]}, projects:[roof,xmas]};
 }
 function loadSample(){
   state = freshState();
   const s = buildSample();
-  state.tx = s.tx; state.budgets = s.budgets; state.streams = s.streams; state.meta.sample = true;
+  state.tx = s.tx; state.budgets = s.budgets; state.streams = s.streams;
+  state.household = s.household || {members:[]}; state.projects = s.projects || [];
+  state.meta.sample = true;
   store.save(); bootTimeDefaults(); renderAll(); toast('Sample data loaded — explore, then “Clear sample data” when ready');
 }
 function clearSample(btn){
   if(state.meta.sample){
     if(btn && !btn.dataset.armed){ btn.dataset.armed='1'; btn.textContent='Click again to confirm'; setTimeout(()=>{btn.dataset.armed='';btn.textContent='🧹 Clear sample data'},2600); return }
-    state.tx=[]; state.budgets={}; state.streams=[]; state.meta.sample=false; store.save(); bootTimeDefaults(); renderAll(); toast('Sample data cleared — add your own entries');
+    state.tx=[]; state.budgets={}; state.streams=[]; state.household={members:[]}; state.projects=[];
+    state.meta.sample=false; store.save(); bootTimeDefaults(); renderAll(); toast('Sample data cleared — add your own entries');
   }
 }
 function resetAll(btn){
@@ -657,22 +763,34 @@ function minWageNumbers(){
   return {hourly:+S.minWageHourly||0, grossM, netM};
 }
 function pctMinWage(amountM){ const mw=minWageNumbers(); return mw.netM>0? amountM/mw.netM*100 : 0 }
-/* the heart of the Income Map */
+
+/* ----------------------------------------------------------------
+   IMPROVEMENT 6 — Income map recurring-only toggle
+   incomeMapNumbers() now respects UI.incomeMapBase:
+     't12'     → trailing-12 average income (original behaviour)
+     'streams' → sum of recurring income streams only (better for
+                 users with irregular windfalls in their T12 history)
+---------------------------------------------------------------- */
 function incomeMapNumbers(){
   const t=t12();
   const streamsMonthly=state.streams.reduce((a,s)=>a+(+s.monthly||0),0);
-  const netMonthly = t.incAvg>0? t.incAvg : streamsMonthly;
-  const lifestyleM = t.expAvg;                       /* all recorded outflows incl. savings allocations */
+  /* base income: T12 average OR recurring streams only */
+  const useStreams = (UI.incomeMapBase==='streams');
+  const netMonthly = useStreams
+    ? (streamsMonthly || t.incAvg)          /* fall back to T12 if no streams defined */
+    : (t.incAvg>0? t.incAvg : streamsMonthly);
+  const lifestyleM = t.expAvg;
   const savingsAllocM = t.byCatAvg.savings||0;
   const coreLifestyleM = lifestyleM - savingsAllocM;
   const savingsGoalM = netMonthly*state.settings.savingsTargetPct/100;
   const S=state.settings;
-  const needLifestyle = lifestyleM*12;               /* keep current lifestyle exactly */
+  const needLifestyle = lifestyleM*12;
   const needWithSavings = (lifestyleM+savingsGoalM)*12;
   const needComfort = needWithSavings*1.10;
   const netAnnual=netMonthly*12;
   return { t, netMonthly, streamsMonthly, lifestyleM, coreLifestyleM, savingsAllocM, savingsGoalM,
     needLifestyle, needWithSavings, needComfort, netAnnual,
+    usingStreams: useStreams,
     grossCurrent: grossForNet(Math.max(1,netAnnual)),
     grossLifestyle: grossForNet(Math.max(1,needLifestyle)),
     grossWithSavings: grossForNet(Math.max(1,needWithSavings)),
@@ -680,6 +798,166 @@ function incomeMapNumbers(){
     gapMonthly: netMonthly-lifestyleM };
 }
 
+/* ================================================================
+   PROACTIVE ALERTS  (IMPROVEMENT 6)
+   The app already knows when a budget is overspent, when a project
+   is behind and when data has gaps — but it only said so once you
+   navigated to that view. alertsFor() turns those known facts into a
+   ranked, actionable list the Dashboard can surface immediately.
+
+   Severity drives ordering and colour only; nothing here mutates
+   state. Every alert carries an optional `go` view so the UI can
+   offer a one-click route to the fix.
+   ================================================================ */
+const SEV_RANK={critical:0,warn:1,info:2};
+/* Which ledger entries count as postings of a given income stream?
+   Stream id is authoritative, but entries created by the sample data, by CSV/OCR
+   import or before v1.2 carry no streamId — for those, a distinctive first word of
+   the stream label ("Salary (net take-home)" → "salary") is matched against the
+   entry's vendor text, so a stream that IS being posted is not reported as silent. */
+function txMatchesStream(t,s){
+  if(t.cat!=='income') return false;
+  if(t.streamId) return t.streamId===s.id;
+  const word=String(s.label||'').toLowerCase().split(/[^a-z]+/).filter(w=>w.length>3)[0];
+  if(!word) return false;
+  return ((t.sub||'')+' '+(t.desc||'')).toLowerCase().includes(word);
+}
+function streamPostings(s){ return state.tx.filter(t=>txMatchesStream(t,s)) }
+function alertsFor(){
+  const out=[];
+  const now=new Date();
+  const mk=UI.month||{y:now.getFullYear(), m:now.getMonth()};
+  const daysInMonth=new Date(mk.y, mk.m+1, 0).getDate();
+  const isCurrentMonth = mk.y===now.getFullYear() && mk.m===now.getMonth();
+  const st=monthStats(mk.y, mk.m);
+
+  /* --- budget overages, with the remaining-days context --- */
+  for(const o of st.over){
+    const left=(isCurrentMonth? daysInMonth-now.getDate(): 0);
+    out.push({ key:'budget:'+o.cat, sev:'warn', view:'budgets', icon:'🎯',
+      title:catName(o.cat)+' is over budget',
+      detail:`${fmt0(o.act)} spent against a ${fmt0(o.bud)} budget — ${fmt0(o.by)} over in ${MONTHS[mk.m]} ${mk.y}`
+        + (left>0? `, with ${left} day${left===1?'':'s'} still to go` : '')+'.' });
+  }
+
+  /* --- data gaps: a month with nothing recorded breaks the T12 averages --- */
+  const t=t12();
+  const empty=[];
+  for(const {y,m} of t.ms){ if(!txForMonth(y,m).length) empty.push(MONTHS[m]+' '+y) }
+  if(empty.length){
+    out.push({ key:'gap:months', sev: empty.length>=2?'warn':'info', view:'grid', icon:'🗓️',
+      title: empty.length===1? 'One month has no entries' : empty.length+' months have no entries',
+      detail: empty.slice(0,4).join(', ')+(empty.length>4? ' +'+(empty.length-4)+' more' : '')
+        +' — trailing-12 averages treat those as zero spend.' });
+  }
+
+  /* --- recurring income streams that stopped posting --- */
+  const cutoff=new Date(now.getFullYear(), now.getMonth()-2, 1);
+  for(const s of state.streams){
+    const posts=streamPostings(s);
+    const last=posts.reduce((a,x)=> a&&a>x.date? a : x.date, null);
+    if(!last || last < iso(cutoff)){
+      out.push({ key:'stream:'+s.id, sev:(+s.monthly||0)>0?'warn':'info', view:'income', icon:'🔁',
+        title:'Income stream “'+s.label+'” has no recent entries',
+        detail: (last? 'Last posted '+last+'. ' : 'Never posted to the ledger. ')
+          +'Planned at '+fmt0(+s.monthly||0)+'/mo — use “Post this month” on the Income Map.' });
+    }
+  }
+
+  /* --- projects: over budget, or finished but not yet archived --- */
+  for(const p of (state.projects||[])){
+    if(p.archived) continue;
+    const f=projectFunding(p);
+    if(f.budget>0 && f.remaining<0 && p.status!=='cancelled'){
+      out.push({ key:'projover:'+p.id, sev:'warn', view:'projects', icon:projectTypeEmoji(p.type),
+        title:'“'+p.name+'” is over its project budget',
+        detail:'Spent '+fmt0(f.actual)+' of '+fmt0(f.budget)+' — '+fmt0(-f.remaining)+' over. Raise the budget or re-scope the line items.' });
+    }
+    if(p.status==='completed'){
+      out.push({ key:'projdone:'+p.id, sev:'info', view:'projects', icon:'✅',
+        title:'“'+p.name+'” is marked completed',
+        detail:'Spend '+fmt0(f.actual)+' vs budget '+fmt0(f.budget)+'. Archive it to clear the working list and keep a permanent summary.' });
+    }
+  }
+
+  /* --- cashflow direction for the selected month --- */
+  if(st.inc>0 && st.exp>st.inc){
+    out.push({ key:'cashflow:'+mk.y+'-'+mk.m, sev:'warn', view:'plan', icon:'📉',
+      title:MONTHS[mk.m]+' '+mk.y+' spent more than it earned',
+      detail:'Outflows '+fmt0(st.exp)+' against inflows '+fmt0(st.inc)+' — a deficit of '+fmt0(st.exp-st.inc)+'. Plan & Advice ranks the fixes.' });
+  }
+  if(st.exp>0 && st.inc===0){
+    out.push({ key:'noincome:'+mk.y+'-'+mk.m, sev:'info', view:'ledger', icon:'🔍',
+      title:'No income recorded for '+MONTHS[mk.m]+' '+mk.y,
+      detail:'Expenses of '+fmt0(st.exp)+' were recorded with no matching income — check whether payday entries are missing.' });
+  }
+
+  return out.sort((a,b)=> SEV_RANK[a.sev]-SEV_RANK[b.sev] );
+}
+/* alerts the user has not muted this session, plus the per-tab badge count */
+function visibleAlerts(){ const d=UI.alertsDismissed||{}; return alertsFor().filter(a=>!d[a.key]) }
+function alertCountFor(view){ return visibleAlerts().filter(a=>a.view===view).length }
+function dismissAlert(key){ UI.alertsDismissed=UI.alertsDismissed||{}; UI.alertsDismissed[key]=1; renderAll() }
+function restoreAlerts(){ UI.alertsDismissed={}; renderAll(); toast('Muted alerts restored') }
+
+/* ================================================================
+   DATA HEALTH  (IMPROVEMENT 11)
+   A compact integrity score for the numbers the rest of the app
+   derives. Trailing-12 averages, guideline budgets and the income
+   map are only as trustworthy as the coverage behind them.
+   ================================================================ */
+function dataHealth(){
+  const t=t12();
+  const monthsChecked=t.ms.length;
+  const withData=t.ms.filter(({y,m})=>txForMonth(y,m).length);
+  const missing=[], emptyBoth=[];
+  for(const {y,m} of t.ms){
+    const imp=txForMonth(y,m);
+    if(!imp.length){ missing.push({y,m,label:MONTHS[m]+' '+y}); continue }
+    if(!imp.some(x=>x.cat==='income')) emptyBoth.push({y,m,label:MONTHS[m]+' '+y, kind:'no income'});
+    else if(!imp.some(x=>x.cat!=='income')) emptyBoth.push({y,m,label:MONTHS[m]+' '+y, kind:'no expenses'});
+  }
+  const streams=state.streams.map(s=>{
+    const posts=streamPostings(s);
+    const last=posts.reduce((a,x)=> a&&a>x.date? a : x.date, null);
+    const posted12=posts.filter(x=>txYM(x).y>=t.ms[0].y).length;
+    return { label:s.label, monthly:+s.monthly||0, last, posted12, ok: !!last && posted12>0 };
+  }).sort((a,b)=> (a.ok?1:0)-(b.ok?1:0));
+
+  const income=state.tx.filter(x=>x.cat==='income').length, expense=state.tx.length-income;
+  const unclassified=state.tx.filter(x=>x.cat==='other').length;
+  const linked=state.tx.filter(x=>x.projectId).length;
+  const attributed=state.tx.filter(x=>x.memberId).length;
+  const budgeted=EXPENSE_CATS.filter(c=>+state.budgets[c.id]>0).length;
+
+  const checks=[
+    { id:'coverage', ok: missing.length===0, sev: missing.length>=3?'warn':'info', label:'Month-by-month coverage',
+      detail: missing.length? missing.length+' of the last '+monthsChecked+' months have no entries ('+missing.slice(0,3).map(x=>x.label).join(', ')+(missing.length>3?'…':'')+').'
+        : 'All '+monthsChecked+' months in the trailing-12 window have entries.' },
+    { id:'direction', ok: emptyBoth.length===0, sev:'warn', label:'Every month has both income and expenses',
+      detail: emptyBoth.length? emptyBoth.slice(0,3).map(x=>x.label+' has '+x.kind).join('; ')+(emptyBoth.length>3?'…':'')+'.'
+        : 'No month is missing one side of the ledger.' },
+    { id:'streams', ok: streams.length>0 && streams.every(s=>s.ok), sev:'info', label:'Recurring income streams are posting',
+      detail: !streams.length? 'No income streams defined — the Income Map has no baseline to plan against.'
+        : streams.filter(s=>!s.ok).length? streams.filter(s=>!s.ok).map(s=>'“'+s.label+'”'+(s.last?' last posted '+s.last:' never posted')).join('; ')+'.'
+        : 'All '+streams.length+' streams have posted inside the window.' },
+    { id:'classification', ok: unclassified===0, sev:'info', label:'No unclassified spending',
+      detail: unclassified? unclassified+' entr'+(unclassified===1?'y is':'ies are')+' filed under “Other / unclassified”, worth '+fmt0(state.tx.filter(x=>x.cat==='other').reduce((a,x)=>a+x.amt,0))+'.'
+        : 'Every entry has a real category.' },
+    { id:'budgets', ok: budgeted>=8, sev:'info', label:'Budget coverage',
+      detail: budgeted? budgeted+' of '+EXPENSE_CATS.length+' expense categories have a monthly budget.'
+        : 'No monthly budgets set — Budgets ▸ Apply guideline budgets creates a starting set.' },
+    { id:'attribution', ok: (state.household.members.length<2)||attributed>0, sev:'info', label:'Household attribution in use',
+      detail: state.household.members.length<2? 'Single-contributor household — attribution is optional.'
+        : attributed? attributed+' entr'+(attributed===1?'y is':'ies are')+' attributed to a member; '+linked+' linked to a project.'
+        : state.household.members.length+' members defined but no expense is attributed to any of them.' }
+  ];
+  const score=checks.filter(c=>c.ok).length;
+  return { checks, score, total:checks.length, pct: Math.round(score/checks.length*100),
+    monthsChecked, monthsWithData:withData.length, missing, emptyBoth, streams,
+    counts:{ income, expense, unclassified, linked, attributed, budgeted, projects:(state.projects||[]).length,
+      archived:(state.projects||[]).filter(p=>p.archived).length, members:state.household.members.length } };
+}
 /* ================================================================
    VIEW: DASHBOARD
    ================================================================ */
@@ -717,7 +995,10 @@ function renderDash(){
   const bars=t.ms.map(mm=>({label:MONTHS[mm.m], inc:agg(txForMonth(mm.y,mm.m)).inc, exp:agg(txForMonth(mm.y,mm.m)).exp}));
   const yearAgg=agg(txForYear(y));
   const kpi=(lbl,val,sub,cls)=>`<div class="kpi"><div class="lbl">${lbl}</div><div class="v ${cls||''}">${val}</div><div class="sub">${sub||''}</div></div>`;
+  const shownAlerts=visibleAlerts();
+  const health=dataHealth();
   el.innerHTML=`
+  ${alertPanelHTML(shownAlerts, health, alertsFor())}
   <div class="cardhead">
     <h3 style="margin:0">Month at a glance</h3>
     <select style="width:auto" onchange="UI.month=parseMK(this.value);renderAll()">${monthOptions(y+'-'+m)}</select>
@@ -780,7 +1061,53 @@ function renderDash(){
     </div>
   </div>`;
 }
+/* ================================================================
+   PROACTIVE ALERTS PANEL  (IMPROVEMENT 6)
+   Renders the ranked alert list at the top of the Dashboard so the
+   app tells you what needs attention instead of waiting to be asked.
+   ================================================================ */
+function alertPanelHTML(alerts, health, all){
+  all = all || alertsFor();
+  const muted=all.length-alerts.length;
+  const crit=alerts.filter(a=>a.sev==='critical').length;
+  const warn=alerts.filter(a=>a.sev==='warn').length;
+  const info=alerts.filter(a=>a.sev==='info').length;
+  const sorted=[...alerts].sort((a,b)=>SEV_RANK[a.sev]-SEV_RANK[b.sev]);
+  const shown=sorted.slice(0,4);
+  const rest=sorted.slice(4);
+  const row=a=>`
+    <div class="alertrow ${a.sev}" id="al-${esc(a.key).replace(/[^a-z0-9]/gi,'_')}">
+      <span class="alertico">${a.icon||'•'}</span>
+      <div class="alertbody">
+        <div class="alerttitle">${esc(a.title)}</div>
+        <div class="alertdetail small mut">${esc(a.detail)}</div>
+      </div>
+      <div class="alertacts">
+        ${a.view?`<button class="btn ghost small" onclick="showView('${a.view}')">Open</button>`:''}
+        <button class="btn ghost small" title="Mute until reload" onclick="dismissAlert('${esc(a.key)}')">✕</button>
+      </div>
+    </div>`;
+  const head=`<div class="cardhead"><h3 style="margin:0">🔔 Needs your attention</h3>
+      <span class="grow"></span>
+      ${crit?`<span class="chip red">${crit} critical</span>`:''}
+      ${warn?`<span class="chip amber">${warn} to watch</span>`:''}
+      ${info?`<span class="chip grey">${info} for review</span>`:''}
+      <span class="chip ${health.pct>=85?'green':health.pct>=60?'amber':'red'}" title="Data health: ${health.score} of ${health.total} checks pass">📋 data health ${health.pct}%</span>
+      ${muted?`<button class="btn ghost small" onclick="restoreAlerts()">↺ ${muted} muted</button>`:''}
+    </div>`;
+  if(!all.length){
+    return `<div class="card"><div class="cardhead"><h3 style="margin:0">🔔 Needs your attention</h3><span class="grow"></span>
+      <span class="chip ${health.pct>=85?'green':'amber'}">📋 data health ${health.pct}%</span></div>
+      <p class="mut small" style="margin:4px 0 0">Nothing is asking for a decision right now — every budget is inside its limit, no project is over, and the trailing-12 window has data in it. 🎉</p></div>`;
+  }
+  return `<div class="card"><div id="alertPanelHead">${head}</div>
+    ${shown.map(row).join('')}
+    ${rest.length?`<details class="sec" style="margin-top:6px"><summary>${rest.length} more alert${rest.length===1?'':'s'} to review</summary><div class="inner">${rest.map(row).join('')}</div></details>`:''}
+    <p class="hint" style="margin:8px 0 0">Alerts are derived live from your ledger, budgets, income streams and projects — they need no setup and are muted only for this session. Educational guidance, not financial advice.</p>
+  </div>`;
+}
 function parseMK(v){ const p=v.split('-'); return {y:+p[0], m:+p[1]} }
+
 
 /* ================================================================
    VIEW: LEDGER (transaction register + entry form)
@@ -1003,8 +1330,164 @@ function renderGrid(){
       <thead><tr>
         <th class="c0">Category</th>${MONTHS.map(m=>`<th>${m}</th>`).join('')}<th>Year total</th><th>Avg/mo</th><th>Budget/mo</th><th>Δ vs budget</th><th>% spend</th>
       </tr></thead><tbody>${body}</tbody></table></div>
+  </div>
+  ${yoyCardHTML(y)}
+  ${healthCardHTML()}`;
+}
+
+/* ================================================================
+   YEAR OVER YEAR  (IMPROVEMENT 4)
+   The plan view answers “am I making progress?” but had no historical
+   anchor. This compares the selected grid year with any other year,
+   by group and by category, with per-month averages so a part-year
+   dataset is compared fairly.
+   ================================================================ */
+function yearTotalsFor(y){
+  const txs=txForYear(y);
+  const inc=txs.filter(t=>t.cat==='income').reduce((a,t)=>a+t.amt,0);
+  const exp=txs.filter(t=>t.cat!=='income').reduce((a,t)=>a+t.amt,0);
+  const monthsWith=new Set(txs.map(t=>txYM(t).m)).size;
+  const effMonths=monthsWith||1;
+  const byCat={}; for(const t of txs){ if(t.cat!=='income') byCat[t.cat]=(byCat[t.cat]||0)+t.amt }
+  return {y, inc, exp, net:inc-exp, count:txs.length, monthsWith, effMonths, byCat};
+}
+function yoyYears(cur){
+  const ys=[...new Set([...state.tx.map(t=>txYM(t).y), cur])].sort((a,b)=>b-a);
+  return ys.length? ys : [cur];
+}
+function yoyCardHTML(y){
+  const cur=yearTotalsFor(y);
+  const priorYears=yoyYears(y).filter(x=>x!==y);
+  const py = (UI.compareYear && priorYears.includes(UI.compareYear)) ? UI.compareYear
+           : (priorYears.includes(y-1)? y-1 : (priorYears[0]!==undefined? priorYears[0] : null));
+  const selOpts=priorYears.map(x=>`<option value="${x}" ${x===py?'selected':''}>${x}</option>`).join('');
+  if(py===null){
+    return `<div class="card"><div class="cardhead"><h3 style="margin:0">📅 Year over year</h3><span class="grow"></span>
+      <span class="chip grey">${y}</span></div>
+      <p class="mut small" style="margin:4px 0 0">Only ${y} has entries so far. Once a second year is recorded, this panel compares both side by side — spending by group, by category, and per month.</p></div>`;
+  }
+  const prev=yearTotalsFor(py);
+  const curM=cur.inc-cur.exp, prevM=prev.inc-prev.exp;
+  const expDelta=cur.exp-prev.exp, incDelta=cur.inc-prev.inc;
+  const avg=(v,yy)=>v/(yy.effMonths||1);
+  const sign=v=>v>0?'+':'−';
+  const yo=(html,cls)=>`<div class="alertrow ${cls}" style="margin:0 0 12px">${html}</div>`;
+
+  const row=(label, groupColor, cVals, pVals, effC, effP, isCat)=>{
+    const ct=cVals.reduce((a,b)=>a+b,0), pt=pVals.reduce((a,b)=>a+b,0);
+    const ca=ct/(effC||1), pa=pt/(effP||1);
+    const d=ct-pt, dp= pa>0? (d/pa*100) : (ct>0? 100 : 0);
+    const cls= d>0.005? 'delta-up' : d<-0.005? 'delta-down' : 'delta-flat';
+    const arrow= d>0.005? '▲' : d<-0.005? '▼' : '▬';
+    return `<tr>
+      <td${isCat?' style="padding-left:12px"':''}>${label}</td>
+      <td class="num">${ct? fmt0(ct):''}</td><td class="num mut">${ct? fmt0(ca):''}</td>
+      <td class="num">${pt? fmt0(pt):''}</td><td class="num mut">${pt? fmt0(pa):''}</td>
+      <td class="num ${cls}">${(ct||pt)? arrow+' '+fmt0(Math.abs(d)) : ''}</td>
+      <td class="num ${cls}">${(ct||pt)? (dp>=0?'+':'−')+Math.abs(dp).toFixed(1)+'%' : ''}</td></tr>`;
+  };
+  const aTot=MONTHS.map((_,m)=>txForMonth(py,m).filter(t=>t.cat==='income').reduce((a,t)=>a+t.amt,0));  const bTot=MONTHS.map((_,m)=>txForMonth(y,m).filter(t=>t.cat==='income').reduce((a,t)=>a+t.amt,0));
+  const aExp=MONTHS.map((_,m)=>txForMonth(py,m).filter(t=>t.cat!=='income').reduce((a,t)=>a+t.amt,0));
+  const bExp=MONTHS.map((_,m)=>txForMonth(y,m).filter(t=>t.cat!=='income').reduce((a,t)=>a+t.amt,0));
+
+  let body='';
+  body+=`<tr class="grp"><td>💰 INCOME</td><td colspan="6"></td></tr>`;
+  body+=row('Total income','#15803d', bTot, aTot, cur.effMonths, prev.effMonths, false);
+  for(const g of ['obligations','essentials','lifestyle','occasions','future']){
+    const gc=CATS.filter(c=>c.grp===g);
+    const anyInGroup = gc.some(c=>(cur.byCat[c.id]||0)||(prev.byCat[c.id]||0));
+    if(!anyInGroup) continue;
+    body+=`<tr class="grp"><td>${GROUPS[g].name.toUpperCase()}</td><td colspan="6"></td></tr>`;
+    for(const c of gc){
+      const ct=+cur.byCat[c.id]||0, pt=+prev.byCat[c.id]||0;
+      if(!ct && !pt) continue;
+      body+=row(c.icon+' '+esc(c.name), null, [ct], [pt], cur.effMonths, prev.effMonths, true);
+    }
+    const gSumC=gc.reduce((a,c)=>a+(+cur.byCat[c.id]||0),0), gSumP=gc.reduce((a,c)=>a+(+prev.byCat[c.id]||0),0);
+    body+=row('<b>'+esc(GROUPS[g].name)+' subtotal</b>', null, [gSumC], [gSumP], cur.effMonths, prev.effMonths, false);
+  }
+  const bExpTot=bExp.reduce((a,b)=>a+b,0), aExpTot=aExp.reduce((a,b)=>a+b,0);
+  body+=`<tr class="tot"><td>TOTAL EXPENSES</td><td colspan="6"></td></tr>`;
+  body+=row('<b>Total expenses</b>', null, [bExpTot], [aExpTot], cur.effMonths, prev.effMonths, false);
+
+  const verdict = expDelta<-0.005 && bExpTot>0
+    ? {cls:'info', icon:'📉', text:`Spending is down ${fmt0(Math.abs(expDelta))} vs ${py} (${Math.abs(expDelta/(aExpTot||1)*100).toFixed(1)}% lower) — progress.`}
+    : expDelta>0.005 && bExpTot>0
+      ? {cls:'warn', icon:'📈', text:`Spending is up ${fmt0(expDelta)} vs ${py} (${(expDelta/(aExpTot||1)*100).toFixed(1)}% higher), while income ${incDelta>=0?'rose':'fell'} ${fmt0(Math.abs(incDelta))}.`}
+      : {cls:'info', icon:'➖', text:`Spending is broadly level with ${py} (${sign(expDelta)}${fmt0(Math.abs(expDelta))}).`};
+  const netVerdict = cur.net>prev.net+0.005
+    ? `<span class="chip green">net improved ${fmt0(cur.net-prev.net)}</span>`
+    : cur.net<prev.net-0.005
+      ? `<span class="chip red">net worsened ${fmt0(prev.net-cur.net)}</span>`
+      : `<span class="chip grey">net unchanged</span>`;
+
+  return `<div class="card">
+    <div class="cardhead"><h3 style="margin:0">📅 Year over year</h3><span class="grow"></span>
+      <span class="chip grey">compare ${y} against</span>
+      <select style="width:auto" onchange="UI.compareYear=+this.value;renderGrid()">${selOpts}</select>
+      ${netVerdict}
+    </div>
+    <p class="hint" style="margin:0 0 10px">Per-month and per-entry columns divide by the number of months that actually have entries, so a year that is still in progress is not flattered or penalised by empty months. Red = higher than ${py}; green = lower.</p>
+    ${yo(`<span class="alertico">${verdict.icon}</span><div class="alertbody">${esc(verdict.text)}</div>`, verdict.cls)}
+    <div class="kpis">
+      <div class="kpi"><div class="lbl">Income ${y}</div><div class="v pos">${fmt0(cur.inc)}</div><div class="sub">${fmt0(avg(cur.inc,cur))}/mo · ${y===new Date().getFullYear()?'year to date':cur.monthsWith+' months'}</div></div>
+      <div class="kpi"><div class="lbl">Income ${py}</div><div class="v pos">${fmt0(prev.inc)}</div><div class="sub">${fmt0(avg(prev.inc,prev))}/mo · ${prev.monthsWith} months</div></div>
+      <div class="kpi"><div class="lbl">Spending ${y}</div><div class="v">${fmt0(cur.exp)}</div><div class="sub">${fmt0(avg(cur.exp,cur))}/mo</div></div>
+      <div class="kpi"><div class="lbl">Spending ${py}</div><div class="v">${fmt0(prev.exp)}</div><div class="sub">${fmt0(avg(prev.exp,prev))}/mo</div></div>
+      <div class="kpi"><div class="lbl">Net ${y}</div><div class="v ${cur.net>=0?'pos':'neg'}">${fmt0(cur.net)}</div><div class="sub">${cur.count} entries</div></div>
+      <div class="kpi"><div class="lbl">Net ${py}</div><div class="v ${prev.net>=0?'pos':'neg'}">${fmt0(prev.net)}</div><div class="sub">${prev.count} entries</div></div>
+    </div>
+    <div class="scrollx"><table class="t">
+      <thead><tr><th>Category</th><th class="num">${y} total</th><th class="num">${y} /mo</th><th class="num">${py} total</th><th class="num">${py} /mo</th><th class="num">Δ change</th><th class="num">Δ %</th></tr></thead>
+      <tbody>${body}</tbody></table></div>
   </div>`;
 }
+
+/* ================================================================
+   DATA HEALTH  (IMPROVEMENT 11)
+   Trailing-12 averages, guideline budgets and the income map are only
+   as good as the coverage behind them. This panel makes the gaps
+   explicit and offers a one-click route to each fix.
+   ================================================================ */
+function healthCardHTML(){
+  const h=dataHealth();
+  const c=h.counts;
+  const sevChip=c2=>c2.ok? '<span class="chip green">ok</span>' : `<span class="chip ${c2.sev==='warn'?'amber':'grey'}">check</span>`;
+  const rows=h.checks.map(c2=>`<tr>
+      <td>${h.checks.indexOf(c2)+1}. ${esc(c2.label)}</td>
+      <td>${sevChip(c2)}</td>
+      <td class="small mut">${esc(c2.detail)}</td></tr>`).join('');
+  const streamRows=h.streams.length? h.streams.map(s=>`<tr>
+      <td>${esc(s.label)}</td><td class="num">${fmt0(s.monthly)}/mo</td>
+      <td>${s.posted12} posting(s) in window</td>
+      <td>${s.last? esc(s.last) : '<span class="mut">never</span>'}</td>
+      <td>${s.ok?'<span class="chip green">healthy</span>':'<span class="chip amber">stale</span>'}</td></tr>`).join('')
+    : `<tr><td colspan="5" class="mut">No recurring income streams defined.</td></tr>`;
+  const firstUnposted=h.streams.find(s=>!s.ok);
+  return `<div class="card">
+    <div class="cardhead"><h3 style="margin:0">📋 Data health — is the trailing-12 picture trustworthy?</h3><span class="grow"></span>
+      <span class="chip ${h.pct>=85?'green':h.pct>=60?'amber':'red'}">${h.score} of ${h.total} checks pass · ${h.pct}%</span>
+    </div>
+    <p class="hint" style="margin:0 0 10px">Every average and guideline in LifeLedger is derived from the last ${h.monthsChecked} calendar months. Missing months, silent income streams and unclassified entries quietly distort them — this panel names them.</p>
+    <div class="scrollx"><table class="t"><thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="kpis" style="margin-top:12px">
+      <div class="kpi"><div class="lbl">Months with data</div><div class="v">${h.monthsWithData}<span class="mut" style="font-size:14px">/${h.monthsChecked}</span></div><div class="sub">trailing-12 window</div></div>
+      <div class="kpi"><div class="lbl">Entries</div><div class="v">${c.income+c.expense}</div><div class="sub">${c.income} income · ${c.expense} expense</div></div>
+      <div class="kpi"><div class="lbl">Budgeted categories</div><div class="v">${c.budgeted}<span class="mut" style="font-size:14px">/${EXPENSE_CATS.length}</span></div><div class="sub">monthly budgets set</div></div>
+      <div class="kpi"><div class="lbl">Attributed</div><div class="v">${c.attributed+c.linked}</div><div class="sub">${c.attributed} member · ${c.linked} project</div></div>
+      <div class="kpi"><div class="lbl">Projects</div><div class="v">${c.projects}</div><div class="sub">${c.archived} archived</div></div>
+    </div>
+    <h4 style="margin:12px 0 6px">🔁 Recurring income streams</h4>
+    <div class="scrollx"><table class="t"><thead><tr><th>Stream</th><th class="num">Planned</th><th>Posted</th><th>Last posting</th><th>Status</th></tr></thead><tbody>${streamRows}</tbody></table></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+      ${firstUnposted?`<button class="btn small" onclick="showView('income')">🔁 Review income streams</button>`:''}
+      ${h.missing.length?`<button class="btn ghost small" onclick="showView('ledger')">📒 Fill the ${h.missing.length} gap month${h.missing.length===1?'':'s'}</button>`:''}
+      ${c.unclassified?`<button class="btn ghost small" onclick="UI.ledgerFilter={cat:'other',src:'all',q:'',month:'all'};showView('ledger');renderLedger()">🏷️ Re-categorise ${c.unclassified} entr${c.unclassified===1?'y':'ies'}</button>`:''}
+      ${c.budgeted<8?`<button class="btn ghost small" onclick="applyGuidelineBudgets()">✨ Apply guideline budgets</button>`:''}
+    </div>
+  </div>`;
+}
+
 function setBudget(cat, v){ if(!cat) return; const n=Math.max(0,parseAmt(v)); if(n) state.budgets[cat]=round2(n); else delete state.budgets[cat]; store.save(); toast('Budget for '+catName(cat)+' set to '+fmt0(n)+'/mo'); renderGrid(); renderBudgets(); renderDash(); }
 function drill(cat,m,y){ UI.ledgerFilter={cat:cat||'all', src:'all', q:'', month:y+'-'+m}; showView('ledger') }
 
@@ -1130,7 +1613,25 @@ function renderIncome(){
       </div>
     </div>
   </div>`:'';
+
+  /* ----------------------------------------------------------------
+     IMPROVEMENT 6 — Income base toggle buttons rendered in the map header
+  ---------------------------------------------------------------- */
+  const baseToggle=`
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <span class="mut small">Income base for map calculations:</span>
+      <button class="btn small ${UI.incomeMapBase==='t12'?'':'ghost'}" onclick="UI.incomeMapBase='t12';renderIncome();renderDash();renderPlan()">
+        📊 Trailing-12 avg ${im.t.incAvg>0?'('+fmt0(im.t.incAvg)+'/mo)':''}
+      </button>
+      <button class="btn small ${UI.incomeMapBase==='streams'?'':'ghost'}" onclick="UI.incomeMapBase='streams';renderIncome();renderDash();renderPlan()">
+        🔁 Recurring streams only ${im.streamsMonthly>0?'('+fmt0(im.streamsMonthly)+'/mo)':''}
+      </button>
+      ${im.usingStreams?`<span class="chip amber">Using streams only — irregular income excluded from projection</span>`
+        :`<span class="chip grey">Trailing-12 includes all income types; switch to streams for irregular-income households</span>`}
+    </div>`;
+
   el.innerHTML=`
+  ${baseToggle}
   <div class="grid2">
     <div class="card">
       <h3>💵 Income streams</h3>
@@ -1181,7 +1682,7 @@ function renderIncome(){
     <table class="t ladder">
       <thead><tr><th>Level</th><th class="num">Take-home needed /mo</th><th class="num">/yr</th><th class="num">Gross salary needed /mo</th><th class="num">/yr</th><th>Status vs your ${fmt0(im.netMonthly)}/mo</th></tr></thead>
       <tbody>${ladder}</tbody></table>
-    <p class="hint" style="margin-top:8px">Tax inversion solves gross ↔ net exactly (binary search on the allowance + rate you set). “Survival” counts your obligations &amp; essentials only.</p>
+    <p class="hint" style="margin-top:8px">Tax inversion solves gross ↔ net exactly (binary search on the allowance + rate you set). "Survival" counts your obligations &amp; essentials only.</p>
   </div>
   ${lensCard}
   <div class="grid2">
@@ -1225,7 +1726,6 @@ function postStreams(){
   store.save(); renderAll(); toast(added+' income entries posted'+(skipped?' ('+skipped+' already posted)':''));
 }
 function setSetting(k,v){ state.settings[k]=parseAmt(v)||0; store.save(); renderIncome(); renderDash(); renderPlan(); }
-
 /* ================================================================
    VIEW: PLAN & ADVICE  (surplus → investments · deficit → strategies)
    ================================================================ */
@@ -1240,6 +1740,55 @@ function updCutLbl(c){
   if(l1) l1.textContent=UI.cuts[c]||0;
   if(l2) l2.textContent=fmt0((t.byCatAvg[c]||0)*(UI.cuts[c]||0)/100);
 }
+
+/* ----------------------------------------------------------------
+   IMPROVEMENT 3 — Personalised dynamic quick wins
+   Replaces boilerplate tips with ranked, user-data-driven suggestions
+   drawn from actual spending patterns, overspent categories, and
+   subscription / dining / loan totals.
+---------------------------------------------------------------- */
+function buildQuickWins(t, excess, netRef){
+  const wins=[];
+  /* 1. Subscriptions: if user has any subscription spend flag it specifically */
+  const subSpend=t.byCatAvg.subscriptions||0;
+  if(subSpend>0){
+    wins.push({score:subSpend, text:`You average ${fmt0(subSpend)}/mo on subscriptions. Auditing for unused or duplicate services typically recovers 20–40% — that's up to ${fmt0(subSpend*0.4)}/mo.`});
+  }
+  /* 2. Dining: if above guideline */
+  const diningSpend=t.byCatAvg.dining||0;
+  const diningGuide=netRef*(CAT.dining.guide||7)/100;
+  if(diningSpend>diningGuide){
+    const saving=diningSpend-diningGuide;
+    wins.push({score:saving, text:`Dining averages ${fmt0(diningSpend)}/mo — ${fmt0(saving)}/mo above the ${CAT.dining.guide}% guideline. Two extra meal-prep days per week typically cuts restaurant spend by 25–30%, freeing ${fmt0(diningSpend*0.27)}/mo.`});
+  }
+  /* 3. Top overspent category (if not already dining) */
+  const topOver=excess.find(x=>x.c.id!=='dining'&&x.c.id!=='loans');
+  if(topOver){
+    wins.push({score:topOver.excess, text:`${topOver.c.icon} ${topOver.c.name} is your biggest category overage: ${fmt0(topOver.spend)}/mo vs a ${topOver.c.guide}% guideline of ${fmt0(topOver.guide)}/mo. Bringing it to guideline saves ${fmt0(topOver.excess*12)}/yr.`});
+  }
+  /* 4. Insurance: always worth a re-quote nudge */
+  const insSpend=t.byCatAvg.insurance||0;
+  if(insSpend>0){
+    wins.push({score:insSpend*0.12, text:`Insurance averages ${fmt0(insSpend)}/mo. Bundling motor and home cover and re-quoting annually typically saves 10–15% — about ${fmt0(insSpend*0.12)}/mo in your case.`});
+  }
+  /* 5. Loans: suggest refinancing if it's a large share */
+  const loanSpend=t.byCatAvg.loans||0;
+  if(loanSpend>netRef*0.30){
+    wins.push({score:loanSpend*0.02, text:`Loan repayments take ${(loanSpend/netRef*100).toFixed(0)}% of your net income (${fmt0(loanSpend)}/mo). Ask your lender about refinancing — even a 0.5% rate reduction on ${fmt0(loanSpend)}/mo of obligations matters significantly over the life of the loan.`});
+  }
+  /* 6. Auto / fuel: if meaningful */
+  const autoSpend=t.byCatAvg.auto||0;
+  if(autoSpend>0){
+    wins.push({score:autoSpend*0.08, text:`Auto costs (fuel, licensing) average ${fmt0(autoSpend)}/mo. Consolidating trips and checking tyre pressure monthly can reduce fuel consumption by 5–10% — roughly ${fmt0(autoSpend*0.08)}/mo.`});
+  }
+  /* 7. Structural gap fallback */
+  if(wins.length<3){
+    wins.push({score:0, text:'Your spending categories are close to guideline. The gap is likely structural — focus on the Income Map revenue target and consider refinancing fixed obligations.'});
+  }
+  /* sort by estimated saving, take top 5 */
+  return wins.sort((a,b)=>b.score-a.score).slice(0,5).map(w=>w.text);
+}
+
 function renderPlan(){
   const el=$('v-plan'); const t=t12(); const im=incomeMapNumbers(); const S=state.settings;
   const mw=minWageNumbers();
@@ -1262,14 +1811,10 @@ function renderPlan(){
     .sort((a,b)=>b.excess-a.excess);
   const stratLines=excess.slice(0,4).map(x=>
     `• <b>${x.c.name}</b> runs ${fmt0(x.spend)}/mo — ${(x.spend/netRef*100).toFixed(1)}% of net income vs a ${x.c.guide}% guideline. Bringing it to the guideline frees <b>${fmt0(x.excess)}/mo (${fmt0(x.excess*12)}/yr)</b>.`).join('<br>');
-  const quickWins=[
-    'Audit subscriptions: cancel anything unused for 60+ days — usually 1–3% of net recovered.',
-    'Meal-prep 2 extra days a week; restaurant spend typically drops 20–30%.',
-    'Bundle motor + home insurance and re-quote annually — 10–15% savings are common.',
-    'Ask your lender about refinancing/shortening loans — even 0.5% matters over years.',
-    'Shift grocery runs to bulk/wholesale cycles and plan around sales.',
-    'If the gap persists, treat it as an income problem: the Income Map shows the revenue target.'
-  ];
+
+  /* IMPROVEMENT 3 — personalised quick wins (replaces generic boilerplate) */
+  const quickWins = buildQuickWins(t, excess, netRef);
+
   el.innerHTML=`
   <div class="card">
     <div class="cardhead"><h3 style="margin:0">💡 Where you stand</h3><span class="grow"></span>
@@ -1329,13 +1874,12 @@ function renderPlan(){
           <td><button class="btn ghost small" onclick="setBudget('${x.c.id}',${Math.round(x.guide/10)*10})">set as budget</button></td></tr>`).join('')}</tbody></table>
         <div style="margin-top:10px">${stratLines}</div>`:
         '<p class="mut">No category is dramatically above guideline — your deficit (if any) is structural: income vs fixed obligations. Focus on the Income Map revenue target and refinancing fixed costs.</p>'}
-      <h3 style="margin-top:14px">Quick wins, biggest-impact first</h3>
+      <h3 style="margin-top:14px">🎯 Biggest savings opportunities — based on your actual spending</h3>
       <div class="small" style="line-height:1.9">${quickWins.map(q=>'• '+q).join('<br>')}</div>
       <p class="hint" style="margin-top:8px">⚠️ Educational guidance only — not financial advice.</p>
     </div>
   </details>`;
 }
-
 /* ================================================================
    VIEW: ADD DATA  (manual · invoice scan · email/text · CSV)
    ================================================================ */
@@ -1593,10 +2137,51 @@ function importCSV(){
 /* ================================================================
    EXPORT / IMPORT / MENU / ROUTER / BOOT
    ================================================================ */
+
+/* ----------------------------------------------------------------
+   IMPROVEMENT 5 — Full CSV export including all attribution fields
+   Original export lost: household_member, project, project_item,
+   income_type. All are now included so external analysis retains
+   the full attribution context.
+---------------------------------------------------------------- */
+function memberName(id){
+  if(!id) return '';
+  const m=(state.household.members||[]).find(x=>x.id===id);
+  return m? m.name : '';
+}
+function projectName(id){
+  if(!id) return '';
+  const p=(state.projects||[]).find(x=>x.id===id);
+  return p? p.name : '';
+}
+function projectItemName(pid,iid){
+  if(!pid||!iid) return '';
+  const p=(state.projects||[]).find(x=>x.id===pid);
+  if(!p) return '';
+  const i=(p.items||[]).find(x=>x.id===iid);
+  return i? i.name : '';
+}
+/* an expense spent on a project that has since been archived keeps its attribution
+   in the export (the live link is released so monthly category totals stay intact) */
+function txProjectId(t){ return t.projectId || t._archivedProjectId || '' }
+function txProjectItemId(t){ return t.projectId? (t.projectItemId||'') : '' }
 function csvOf(ts){
   const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
-  const head=['date','category','subcategory','description','amount','source','tax_deductible'];
-  return [head.join(',')].concat(ts.map(t=>[t.date,t.cat,t.sub||'',t.desc||'',t.amt.toFixed(2),t.src,t.ded?'yes':'no'].map(q).join(','))).join('\n');
+  const head=['date','category','subcategory','description','amount','source','tax_deductible',
+               'income_type','household_member','project','project_item'];
+  return [head.join(',')].concat(ts.map(t=>[
+    t.date,
+    t.cat,
+    t.sub||'',
+    t.desc||'',
+    t.amt.toFixed(2),
+    t.src,
+    t.ded?'yes':'no',
+    t.cat==='income'? incomeTypeLabel(t.incomeType||'other_income') : '',
+    memberName(t.memberId),
+    projectName(txProjectId(t)),
+    projectItemName(txProjectId(t), txProjectItemId(t))
+  ].map(q).join(','))).join('\n');
 }
 function exportCSV(filtered){
   let ts=filtered? ledgerRows(): state.tx.slice();
@@ -1622,7 +2207,7 @@ function showExportModal(title, content, filename){
   m.innerHTML=`<div class="card" style="max-width:760px;margin:6vh auto;position:relative">
     <button class="btn ghost small" style="position:absolute;top:10px;right:10px" onclick="this.closest('#expModal').style.display='none'">✕ close</button>
     <h3>${esc(title)}</h3>
-    <p class="hint">If the download doesn’t start (the in-app preview blocks downloads), select all text below and copy it.</p>
+    <p class="hint">If the download doesn't start (the in-app preview blocks downloads), select all text below and copy it.</p>
     <button class="btn small" onclick="downloadBlob('${esc(filename)}')">⬇️ Download file</button>
     <textarea id="expTA" spellcheck="false" style="width:100%;height:44vh;margin-top:10px;font-family:ui-monospace,Consolas,monospace;font-size:11.5px">${esc(content)}</textarea>
   </div>`;
@@ -1683,7 +2268,7 @@ function bootTimeDefaults(){
   UI.editingId=null; UI.candidates=[]; UI.csvCands=[]; UI.emailText=''; UI.ocrMsg=''; UI.parseMsg=''; UI.csvMsg='';
 }
 function renderAll(){
-  renderBanner(); renderDash(); renderLedger(); renderGrid(); renderBudgets(); renderHousehold(); renderProjects(); renderIncome(); renderPlan(); renderIngest(); updateSaveBadge();
+  renderBanner(); renderDash(); renderLedger(); renderGrid(); renderBudgets(); renderHousehold(); renderProjects(); renderIncome(); renderPlan(); renderIngest(); updateSaveBadge(); refreshAlertBadges();
 }
 /* ================================================================
    VIEW: HOUSEHOLD
@@ -1710,6 +2295,66 @@ function deleteHouseholdMember(id){
 function setStreamMember(id,memberId){
   const s=state.streams.find(x=>x.id===id); if(!s)return;
   s.memberId=memberId||null; store.save(); renderHousehold(); renderIncome();
+}
+/* ================================================================
+   HOUSEHOLD SPENDING SPLIT  (IMPROVEMENT 8)
+   Income attribution and per-member expense totals already existed as
+   numbers; this makes the split visible — a stacked bar for the whole
+   month plus a share donut by contributor. Shared (unattributed)
+   spending is shown explicitly rather than hidden, so the chart never
+   implies a member spent money that was never attributed to them.
+   ================================================================ */
+const MEMBER_COLORS=['#3450b4','#0e9488','#d97706','#7c3aed','#be123c','#0369a1','#4d7c0f','#a16207'];
+function householdSplit(y,m){
+  const tx=txForMonth(y,m).filter(t=>t.cat!=='income');
+  const total=round2(tx.reduce((a,t)=>a+t.amt,0));
+  const buckets=state.household.members.map((mem,i)=>({
+    id:mem.id, name:mem.name, role:mem.role||'Contributor',
+    val:round2(tx.filter(t=>t.memberId===mem.id).reduce((a,t)=>a+t.amt,0)),
+    color:MEMBER_COLORS[i%MEMBER_COLORS.length]
+  }));
+  const shared=round2(tx.filter(t=>!t.memberId||!state.household.members.some(mem=>mem.id===t.memberId))
+    .reduce((a,t)=>a+t.amt,0));
+  if(shared>0) buckets.push({id:'__shared', name:'🏠 Household / shared', role:'Not attributed', val:shared, color:'#94a3b8', shared:true});
+  const attributed=round2(total-shared);
+  return { y, m, total, buckets: buckets.filter(b=>b.val>0||!b.shared), shared, attributed,
+    attributedPct: total? attributed/total*100 : 0,
+    rows: buckets, top: [...buckets].filter(b=>!b.shared).sort((a,b)=>b.val-a.val)[0]||null };
+}
+function memberSplitCardHTML(y,m){
+  const s=householdSplit(y,m);
+  if(!s.total){
+    return '<div class="card"><h3>🥧 Spending split by contributor</h3><p class="mut small" style="margin:4px 0 0">No expenses recorded for '+MONTHS[m]+' '+y+' yet.</p></div>';
+  }
+  if(!state.household.members.length){
+    return '<div class="card"><h3>🥧 Spending split by contributor</h3><p class="mut small" style="margin:4px 0 0">Add household contributors above and attribute entries in the Ledger — every expense is currently recorded as household/shared ('+fmt0(s.total)+').</p></div>';
+  }
+  const bar=s.rows.filter(b=>b.val>0).map(b=>`<i style="width:${(b.val/s.total*100).toFixed(2)}%;background:${b.color}" title="${esc(b.name)} — ${fmt0(b.val)}"></i>`).join('');
+  const legend=s.rows.filter(b=>b.val>0).map(b=>`<div><span class="sw" style="background:${b.color}"></span>${esc(b.name)} — <b>${fmt0(b.val)}</b> <span class="mut">(${(b.val/s.total*100).toFixed(1)}%${b.shared?' unattributed':''})</span></div>`).join('');
+  const donut=s.buckets.filter(b=>b.val>0).map(b=>({val:b.val, color:b.color}));
+  const table=s.rows.filter(b=>b.val>0).map(b=>`<tr>
+      <td><span class="sw" style="background:${b.color};display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px"></span>${esc(b.name)}</td>
+      <td class="mut small">${esc(b.role)}</td>
+      <td class="num">${fmt0(b.val)}</td>
+      <td class="num">${(b.val/s.total*100).toFixed(1)}%</td>
+      <td class="num mut">${fmt(b.val/s.total*100,2)}</td></tr>`).join('');
+  const note = s.shared>0
+    ? `<p class="hint" style="margin:8px 0 0">${s.attributed>0? fmt0(s.attributed)+' of '+fmt0(s.total)+' ('+s.attributedPct.toFixed(0)+'%) is attributed to a named contributor;':'Nothing is attributed to a named contributor yet;'} the remaining <b>${fmt0(s.shared)}</b> is household/shared spending. Attribute entries in the Ledger to make this split complete.</p>`
+    : `<p class="hint" style="margin:8px 0 0">Every expense in ${MONTHS[m]} is attributed to a named contributor.${s.top? ' Largest share: <b>'+esc(s.top.name)+'</b> at '+(s.top.val/s.total*100).toFixed(1)+'%.':''}</p>`;
+  return `<div class="card">
+    <div class="cardhead"><h3 style="margin:0">🥧 Spending split by contributor</h3><span class="grow"></span>
+      <span class="chip ${s.attributedPct>=80?'green':s.attributedPct>0?'amber':'grey'}">${s.attributedPct.toFixed(0)}% attributed</span></div>
+    <div class="splitbar" role="img" aria-label="Household spending share by contributor">${bar}</div>
+    <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-top:10px">
+      <div style="flex:0 0 190px">${donutSVG(donut)}</div>
+      <div class="legendl" style="flex:1;min-width:200px">${legend}
+        <div class="mut small" style="margin-top:4px">Total household outflows ${fmt0(s.total)} in ${MONTHS[m]} ${y}</div></div>
+    </div>
+    <div class="scrollx" style="margin-top:10px"><table class="t">
+      <thead><tr><th>Contributor</th><th>Role</th><th class="num">Spend</th><th class="num">Share</th><th class="num">Per ${SYM()}100</th></tr></thead>
+      <tbody>${table}</tbody></table></div>
+    ${note}
+  </div>`;
 }
 function renderHousehold(){
   const el=$('v-household'), mk=UI.month, st=monthStats(mk.y,mk.m);
@@ -1740,7 +2385,9 @@ function renderHousehold(){
   '<div class="grid2"><div class="card"><h3>📊 Spending attribution</h3><div class="scrollx"><table class="t"><thead><tr><th>Contributor</th><th class="num">'+MONTHS[mk.m]+' spend</th><th>Coverage</th></tr></thead><tbody>'+spend+'</tbody></table></div><p class="hint">Unassigned expenses remain household/shared.</p></div>'+
   '<div class="card"><div class="cardhead"><h3 style="margin:0">🎯 Monthly household budget</h3><span class="grow"></span><button class="btn ghost small" onclick="showView(\'budgets\')">Edit category budgets →</button></div>'+
   '<div class="kpis"><div class="kpi"><div class="lbl">Budget</div><div class="v">'+fmt0(budgeted)+'</div><div class="sub">per month</div></div><div class="kpi"><div class="lbl">Actual</div><div class="v">'+fmt0(st.exp)+'</div><div class="sub">selected month</div></div>'+
-  '<div class="kpi"><div class="lbl">Variance</div><div class="v '+(budgeted-st.exp<0?'neg':'pos')+'">'+fmt0(budgeted-st.exp)+'</div><div class="sub">'+(budgeted-st.exp<0?'over budget':'remaining')+'</div></div></div></div></div>';
+  '<div class="kpi"><div class="lbl">Variance</div><div class="v '+(budgeted-st.exp<0?'neg':'pos')+'">'+fmt0(budgeted-st.exp)+'</div><div class="sub">'+(budgeted-st.exp<0?'over budget':'remaining')+'</div></div></div></div></div>'+
+  /* IMPROVEMENT 8 — visual split of household spending by contributor */
+  memberSplitCardHTML(mk.y, mk.m);
 }/* ================================================================
    VIEW: PROJECTS & SPECIAL BUDGETS
    ================================================================ */
@@ -1755,7 +2402,17 @@ function projectTypeLabel(id){const x=PROJECT_TYPES.find(x=>x[0]===id);return x?
 function projectTypeEmoji(id){return ({home:'🏠',event:'🎉',major_purchase:'🛒',other:'🛠️'})[id]||'🛠️'}
 function projectStatusLabel(id){const x=PROJECT_STATUSES.find(x=>x[0]===id);return x?x[1]:'Planning'}
 function projectBudget(p){const n=p.items.reduce((a,i)=>a+(+i.budget||0),0);return n>0?n:(+p.baseBudget||0)}
-function projectActual(p,itemId){return state.tx.filter(t=>t.projectId===p.id&&(itemId?t.projectItemId===itemId:true)&&t.cat!=='income').reduce((a,t)=>a+t.amt,0)}
+/* actual project cost from the ledger.
+   Live transactions match on projectId; transactions belonging to a project that
+   has since been archived match on _archivedProjectId, so a finished project's
+   final figures survive the archive (the live link is released only so ordinary
+   monthly category aggregation is unchanged). */
+function projectActual(p,itemId){
+  if(!p) return 0;
+  return state.tx.filter(t=>t.cat!=='income' && (t.projectId===p.id || t._archivedProjectId===p.id)
+    && (itemId? (t.projectItemId===itemId || t._archivedItemId===itemId) : true))
+    .reduce((a,t)=>a+t.amt,0);
+}
 function projectFunding(p){
   const budget=projectBudget(p), actual=projectActual(p), remaining=Math.max(0,budget-actual), t=t12();
   const available=Math.max(0,t.incAvg-t.expAvg), fp=p.fundingPlan||{}, fixed=+fp.fixedMonthlyContribution||0, pct=+fp.surplusAllocationPct||0;
@@ -1765,23 +2422,124 @@ function projectFunding(p){
 }
 function addProject(){
   const name=$('projName')?.value.trim(); if(!name){toast('Give the project a name');return}
-  const p={id:uid(),name,type:$('projType')?.value||'home',priority:'normal',status:'planning',startDate:todayISO(),targetDate:$('projTarget')?.value||'',baseBudget:round2(parseAmt($('projBudget')?.value)),notes:'',items:[],fundingPlan:{enabled:false,startingReserve:0,oneTimeContribution:0,surplusAllocationPct:0,fixedMonthlyContribution:0}};
+  const p={id:uid(),name,type:$('projType')?.value||'home',priority:'normal',status:'planning',startDate:todayISO(),targetDate:$('projTarget')?.value||'',baseBudget:round2(parseAmt($('projBudget')?.value)),notes:'',items:[],archived:false,completedAt:null,fundingPlan:{enabled:false,startingReserve:0,oneTimeContribution:0,surplusAllocationPct:0,fixedMonthlyContribution:0}};
   state.projects.push(p);store.save();renderProjects();renderLedger();toast('Project created');
 }
 function deleteProject(id){state.projects=state.projects.filter(p=>p.id!==id);for(const t of state.tx)if(t.projectId===id){t.projectId=null;t.projectItemId=null}store.save();renderAll();toast('Project removed; ledger entries kept')}
+
+/* ================================================================
+   PROJECT COMPLETION & ARCHIVE  (IMPROVEMENT 7)
+   Before this, marking a project “Completed” changed a chip and
+   nothing else — the card stayed in the working list forever, and
+   completed projects piled up. Now completion is a real lifecycle
+   step: the project is stamped with a completion date, its actuals
+   are frozen into a permanent summary (budget, actual, variance,
+   duration) and it leaves the working list for a collapsed archive.
+   Ledger entries are never deleted — only the project link is
+   released while archived, so monthly category totals are untouched,
+   and “Restore” re-links every entry that belonged to it.
+   ================================================================ */
+function isArchived(p){ return !!(p && (p.archived || p.status==='completed')) }
+const ARCHIVE_STATUSES=['completed','cancelled'];
+function archiveProjectSummary(p){
+  const budget=projectBudget(p), actual=projectActual(p), remaining=budget-actual;
+  const items=(p.items||[]).map(i=>{ const a=projectActual(p,i.id); return {name:i.name, budget:+i.budget||0, actual:a, variance:(+i.budget||0)-a} });
+  const linked=state.tx.filter(t=>t.projectId===p.id||(t._archivedProjectId===p.id)).length;
+  const start=p.startDate||'', end=p.completedAt||todayISO();
+  let months=null;
+  if(start&&end){ const a=new Date(start), b=new Date(end);
+    if(!isNaN(a)&&!isNaN(b)) months=Math.max(1,Math.round((b-a)/(1000*60*60*24*30.44))) }
+  const variance=budget-actual;
+  return { p, budget, actual, remaining, items, linked, start, end, months, variance,
+    over: variance<0, overPct: budget>0? Math.abs(variance)/budget*100 : 0,
+    completionPct: budget>0? Math.min(100, actual/budget*100) : (actual>0?100:0) };
+}
+function setProjectStatus(id,val,btn){
+  const p=state.projects.find(x=>x.id===id); if(!p) return;
+  if(ARCHIVE_STATUSES.includes(val)){
+    if(!btn || !btn.dataset.armed){
+      if(btn){ btn.dataset.armed='1'; const was=btn.innerHTML; btn.innerHTML='Confirm archive?';
+        setTimeout(()=>{ if(btn.isConnected){ btn.dataset.armed=''; btn.innerHTML=was } },2600) }
+      return;
+    }
+    archiveProject(id,val); return;
+  }
+  p.status=val; p.completedAt=null; p.archived=false;
+  store.save(); renderProjects(); renderDash(); toast('Project status set to '+projectStatusLabel(val));
+}
+function archiveProject(id,status){
+  const p=state.projects.find(x=>x.id===id); if(!p) return;
+  p.status=status||'completed';
+  p.archived=true;
+  p.completedAt=todayISO();
+  /* freeze the record against the ledger without destroying category aggregation */
+  let released=0;
+  for(const t of state.tx) if(t.projectId===p.id){ t._archivedProjectId=p.id; if(t.projectItemId) t._archivedItemId=t.projectItemId; t.projectId=null; t.projectItemId=null; released++ }
+  store.save(); renderAll();
+  const f=archiveProjectSummary(p);
+  toast('“'+p.name+'” archived — '+fmt0(f.actual)+' actual vs '+fmt0(f.budget)+' budget ('+(f.over? fmt0(-f.variance)+' over' : fmt0(f.variance)+' unused')+')');
+}
+function reopenProject(id){
+  const p=state.projects.find(x=>x.id===id); if(!p) return;
+  p.archived=false; p.status='active'; p.completedAt=null;
+  let relinked=0;
+  for(const t of state.tx) if(t._archivedProjectId===p.id){ t.projectId=p.id; if(t._archivedItemId) t.projectItemId=t._archivedItemId; delete t._archivedProjectId; delete t._archivedItemId; relinked++ }
+  store.save(); renderAll();
+  toast('“'+p.name+'” reopened'+(relinked? ' — '+relinked+' ledger entr'+(relinked===1?'y':'ies')+' re-linked':''));
+}
+function archivedProjects(){
+  return state.projects.filter(isArchived)
+    .map(archiveProjectSummary)
+    .sort((a,b)=>(b.p.completedAt||b.p.startDate||'').localeCompare(a.p.completedAt||a.p.startDate||''));
+}
+function archivedCardHTML(){
+  const list=archivedProjects(); if(!list.length) return '';
+  const rows=list.map(f=>{
+    const p=f.p, itemsLeft=p.items.length;
+    const statusChip = p.status==='cancelled'? '<span class="chip red">Cancelled</span>' : '<span class="chip green">Completed</span>';
+    return `<div class="card project-card" style="background:#fbfcfe">
+      <div class="cardhead"><h3 style="margin:0">${projectTypeEmoji(p.type)} ${esc(p.name)}</h3>${statusChip}
+        ${p.priority==='emergency'?'<span class="chip red">🔴 Emergency</span>':''}
+        <span class="grow"></span>
+        <button class="btn ghost small" onclick="reopenProject('${p.id}')">↺ Restore</button>
+        <button class="btn ghost small" onclick="deleteProject('${p.id}')">Delete</button></div>
+      <div class="kpis" style="margin:0">
+        <div class="kpi"><div class="lbl">Final budget</div><div class="v">${fmt0(f.budget)}</div><div class="sub">${itemsLeft} line item${itemsLeft===1?'':'s'}</div></div>
+        <div class="kpi"><div class="lbl">Actual spend</div><div class="v">${fmt0(f.actual)}</div><div class="sub">${f.completionPct.toFixed(0)}% of budget</div></div>
+        <div class="kpi"><div class="lbl">Variance</div><div class="v ${f.over?'neg':'pos'}">${f.over?'−':'+'}${fmt0(Math.abs(f.variance))}</div><div class="sub">${f.over? f.overPct.toFixed(1)+'% over budget' : 'under budget'}</div></div>
+        <div class="kpi"><div class="lbl">Duration</div><div class="v">${f.months!=null? f.months+' mo':'—'}</div><div class="sub">${esc(f.start||'no start')} → ${esc(f.end)}</div></div>
+      </div>
+      ${f.items.length?`<div class="scrollx" style="margin-top:10px"><table class="t"><thead><tr><th>Line item</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">Variance</th></tr></thead><tbody>
+        ${f.items.map(i=>`<tr><td>${esc(i.name)}</td><td class="num">${fmt0(i.budget)}</td><td class="num">${fmt0(i.actual)}</td><td class="num ${i.variance<0?'neg':'pos'}">${fmt0(i.variance)}</td></tr>`).join('')}
+      </tbody></table></div>`:''}
+      <p class="hint" style="margin:8px 0 0">${f.over
+        ? 'Finished '+fmt0(-f.variance)+' over budget. '
+        : (f.variance>0? 'Finished '+fmt0(f.variance)+' under budget. ' : 'Finished exactly on budget. ')}
+        ${f.linked} ledger entr${f.linked===1?'y':'ies'} were linked to this project${isArchived(p)&&!p.archived?'':' and are unfrozen in the ledger for this archive'}. Life Ledger never transfers money — if you want the ${f.variance>0?fmt0(f.variance)+' surplus':'remaining amount'} moved into savings, record it as a <b>Savings</b> entry.</p>
+    </div>`;
+  }).join('');
+  const totalBudget=list.reduce((a,f)=>a+f.budget,0), totalActual=list.reduce((a,f)=>a+f.actual,0);
+  const totalVar=totalBudget-totalActual;
+  return `<details class="sec" style="margin-top:16px">
+    <summary>🗄️ Project archive — ${list.length} finished project${list.length===1?'':'s'} · ${fmt0(totalActual)} spent of ${fmt0(totalBudget)} (${totalVar>=0? fmt0(totalVar)+' under':fmt0(-totalVar)+' over'})</summary>
+    <div class="inner">${rows}
+      <p class="hint">Archived projects keep their final figures for year-over-year reference and stay out of the working list. Restore returns one to the active list and re-links its ledger entries.</p>
+    </div></details>`;
+}
 function updateProjectField(id,key,val){const p=state.projects.find(x=>x.id===id);if(!p)return;if(key==='budget')p.baseBudget=parseAmt(val);else p[key]=val;store.save();renderProjects();renderLedger()}
 function updateProjectPriority(id,val){updateProjectField(id,'priority',val)}
 function updateProjectFunding(id,key,val){const p=state.projects.find(x=>x.id===id);if(!p)return;p.fundingPlan=p.fundingPlan||{enabled:false,startingReserve:0,oneTimeContribution:0,surplusAllocationPct:0,fixedMonthlyContribution:0};p.fundingPlan[key]=parseAmt(val);store.save();renderProjects()}
 function addProjectItem(id){const n=$('pi_name_'+id)?.value.trim(),b=parseAmt($('pi_budget_'+id)?.value),p=state.projects.find(x=>x.id===id);if(!p||!n){toast('Enter a project item');return}p.items.push({id:uid(),name:n,budget:round2(b),notes:''});store.save();renderProjects();renderLedger()}
 function deleteProjectItem(pid,iid){const p=state.projects.find(x=>x.id===pid);if(!p)return;p.items=p.items.filter(i=>i.id!==iid);for(const t of state.tx)if(t.projectItemId===iid)t.projectItemId=null;store.save();renderProjects()}
 function renderProjects(){
-  const el=$('v-projects'); const cards=state.projects.map(p=>{
+  const el=$('v-projects'); const active=state.projects.filter(p=>!isArchived(p));
+  const cards=active.map(p=>{
     const f=projectFunding(p), pct=f.budget>0?Math.min(100,f.actual/f.budget*100):0;
     const items=p.items.map(i=>{const a=projectActual(p,i.id),r=(+i.budget||0)-a;return '<tr><td>'+esc(i.name)+'</td><td class="num">'+fmt0(i.budget)+'</td><td class="num">'+fmt0(a)+'</td><td class="num '+(r<0?'neg':'pos')+'">'+fmt0(r)+'</td><td><button class="btn ghost small" onclick="deleteProjectItem(\''+p.id+'\',\''+i.id+'\')">✕</button></td></tr>'}).join('')||'<tr><td colspan="5" class="mut">No line items yet.</td></tr>';
     return '<div class="card project-card"><div class="cardhead"><h3 style="margin:0">'+projectTypeEmoji(p.type)+' '+esc(p.name)+'</h3><span class="chip '+(p.priority==='emergency'?'red':p.priority==='high'?'amber':'grey')+'">'+(p.priority==='emergency'?'🔴 Emergency':p.priority==='high'?'High':'Normal')+'</span><span class="chip '+(p.status==='completed'?'green':p.status==='cancelled'?'red':p.status==='active'?'amber':'grey')+'">'+esc(projectStatusLabel(p.status))+'</span><span class="grow"></span><button class="btn ghost small" onclick="deleteProject(\''+p.id+'\')">Delete</button></div>'+
     '<div class="formgrid"><div><label class="f">Category</label><select onchange="updateProjectField(\''+p.id+'\',\'type\',this.value)">'+PROJECT_TYPES.map(x=>'<option value="'+x[0]+'" '+(x[0]===p.type?'selected':'')+'>'+x[1]+'</option>').join('')+'</select></div>'+
     '<div><label class="f">Priority</label><select onchange="updateProjectPriority(\''+p.id+'\',this.value)">'+PROJECT_PRIORITIES.map(x=>'<option value="'+x[0]+'" '+(x[0]===p.priority?'selected':'')+'>'+x[1]+'</option>').join('')+'</select></div>'+
-    '<div><label class="f">Status</label><select onchange="updateProjectField(\''+p.id+'\',\'status\',this.value)">'+PROJECT_STATUSES.map(x=>'<option value="'+x[0]+'" '+(x[0]===p.status?'selected':'')+'>'+x[1]+'</option>').join('')+'</select></div>'+
+    '<div><label class="f">Status</label><select onchange="setProjectStatus(\''+p.id+'\',this.value,this)">'+PROJECT_STATUSES.map(x=>'<option value="'+x[0]+'" '+(x[0]===p.status?'selected':'')+'>'+x[1]+'</option>').join('')+'</select><span class="hint">Completed archives the project</span></div>'+
     '<div><label class="f">Target date</label><input type="date" value="'+esc(p.targetDate||'')+'" onchange="updateProjectField(\''+p.id+'\',\'targetDate\',this.value)"></div><div><label class="f">Base budget</label><input type="number" min="0" step="10" value="'+(p.baseBudget||'')+'" onchange="updateProjectField(\''+p.id+'\',\'budget\',this.value)"></div></div>'+
     '<div class="kpis" style="margin-top:12px"><div class="kpi"><div class="lbl">Budget</div><div class="v">'+fmt0(f.budget)+'</div><div class="sub">'+(p.items.length?'sum of items':'base budget')+'</div></div>'+
     '<div class="kpi"><div class="lbl">Actual</div><div class="v">'+fmt0(f.actual)+'</div><div class="sub">linked ledger costs</div></div><div class="kpi"><div class="lbl">Remaining</div><div class="v '+(f.remaining>0?'pos':'neg')+'">'+fmt0(f.remaining)+'</div><div class="sub">'+(f.remaining>0?'to spend':'budget used')+'</div></div>'+
@@ -1798,7 +2556,9 @@ function renderProjects(){
   }).join('');
   el.innerHTML='<div class="card"><div class="cardhead"><h3 style="margin:0">🛠️ Projects & special budgets</h3><span class="grow"></span><button class="btn ghost small" onclick="showView(\'budgets\')">Monthly budgets →</button></div><p class="hint" style="margin:0">Use finite budgets for roof repairs, refurbishments, plumbing/sewerage emergencies, events, major purchases and other special goals. Emergency is a priority, not a project category.</p>'+
   '<div class="formgrid" style="margin-top:12px"><div><label class="f">Project name *</label><input id="projName" type="text" placeholder="e.g. Roof replacement"></div><div><label class="f">Category</label><select id="projType">'+PROJECT_TYPES.map(x=>'<option value="'+x[0]+'">'+x[1]+'</option>').join('')+'</select></div><div><label class="f">Base budget</label><input id="projBudget" type="number" min="0" step="10" placeholder="0.00"></div><div><label class="f">Target date</label><input id="projTarget" type="date"></div><div style="display:flex;align-items:end"><button class="btn" onclick="addProject()">➕ Create project</button></div></div></div>'+
-  (cards||'<div class="card" style="text-align:center;padding:36px"><div style="font-size:38px">🛠️</div><h3>No special projects yet</h3><p class="mut">Create a finite budget instead of forcing a renovation, event or emergency into a recurring monthly category.</p></div>');
+  (cards||'<div class="card" style="text-align:center;padding:36px"><div style="font-size:38px">🛠️</div><h3>No special projects yet</h3><p class="mut">Create a finite budget instead of forcing a renovation, event or emergency into a recurring monthly category.</p></div>')+
+  /* IMPROVEMENT 7 — finished projects move here instead of piling up */
+  archivedCardHTML();
 }(function boot(){
   /* expose read/write access for the browser console & tests */
   window.LL={ get state(){return state}, set state(v){ state=v }, get UI(){return UI} };
@@ -1806,13 +2566,19 @@ function renderProjects(){
   state=loaded||freshState();
   if(loaded) state.settings=migrateSettings(state.settings);   /* migrate older saves to the current schema */
   migrateWorkspace(state);
-  if(!loaded){ const s=buildSample(); state.tx=s.tx; state.budgets=s.budgets; state.streams=s.streams; state.meta.sample=true; migrateIncomeTypes(state); store.save() }
+  if(!loaded){
+    const s=buildSample();
+    state.tx=s.tx; state.budgets=s.budgets; state.streams=s.streams;
+    state.household=s.household||{members:[]}; state.projects=s.projects||[];
+    state.meta.sample=true; migrateIncomeTypes(state); store.save();
+  }
   else migrateIncomeTypes(state);
   if(!state.meta) state.meta={init:true,sample:false};
   $('currencySel').innerHTML=CURRENCIES.map(c=>`<option value="${c[0]}" ${c[0]===state.settings.currency?'selected':''}>${c[0]} ${c[1]}</option>`).join('');
   bootTimeDefaults();
   renderAll();
   showView('dash');
+  showStorageWarning();   /* IMPROVEMENT 1 — block-and-acknowledge if storage is unavailable */
 })();
 </script>
 </body>

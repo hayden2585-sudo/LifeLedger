@@ -12,6 +12,55 @@ function updCutLbl(c){
   if(l1) l1.textContent=UI.cuts[c]||0;
   if(l2) l2.textContent=fmt0((t.byCatAvg[c]||0)*(UI.cuts[c]||0)/100);
 }
+
+/* ----------------------------------------------------------------
+   IMPROVEMENT 3 — Personalised dynamic quick wins
+   Replaces boilerplate tips with ranked, user-data-driven suggestions
+   drawn from actual spending patterns, overspent categories, and
+   subscription / dining / loan totals.
+---------------------------------------------------------------- */
+function buildQuickWins(t, excess, netRef){
+  const wins=[];
+  /* 1. Subscriptions: if user has any subscription spend flag it specifically */
+  const subSpend=t.byCatAvg.subscriptions||0;
+  if(subSpend>0){
+    wins.push({score:subSpend, text:`You average ${fmt0(subSpend)}/mo on subscriptions. Auditing for unused or duplicate services typically recovers 20–40% — that's up to ${fmt0(subSpend*0.4)}/mo.`});
+  }
+  /* 2. Dining: if above guideline */
+  const diningSpend=t.byCatAvg.dining||0;
+  const diningGuide=netRef*(CAT.dining.guide||7)/100;
+  if(diningSpend>diningGuide){
+    const saving=diningSpend-diningGuide;
+    wins.push({score:saving, text:`Dining averages ${fmt0(diningSpend)}/mo — ${fmt0(saving)}/mo above the ${CAT.dining.guide}% guideline. Two extra meal-prep days per week typically cuts restaurant spend by 25–30%, freeing ${fmt0(diningSpend*0.27)}/mo.`});
+  }
+  /* 3. Top overspent category (if not already dining) */
+  const topOver=excess.find(x=>x.c.id!=='dining'&&x.c.id!=='loans');
+  if(topOver){
+    wins.push({score:topOver.excess, text:`${topOver.c.icon} ${topOver.c.name} is your biggest category overage: ${fmt0(topOver.spend)}/mo vs a ${topOver.c.guide}% guideline of ${fmt0(topOver.guide)}/mo. Bringing it to guideline saves ${fmt0(topOver.excess*12)}/yr.`});
+  }
+  /* 4. Insurance: always worth a re-quote nudge */
+  const insSpend=t.byCatAvg.insurance||0;
+  if(insSpend>0){
+    wins.push({score:insSpend*0.12, text:`Insurance averages ${fmt0(insSpend)}/mo. Bundling motor and home cover and re-quoting annually typically saves 10–15% — about ${fmt0(insSpend*0.12)}/mo in your case.`});
+  }
+  /* 5. Loans: suggest refinancing if it's a large share */
+  const loanSpend=t.byCatAvg.loans||0;
+  if(loanSpend>netRef*0.30){
+    wins.push({score:loanSpend*0.02, text:`Loan repayments take ${(loanSpend/netRef*100).toFixed(0)}% of your net income (${fmt0(loanSpend)}/mo). Ask your lender about refinancing — even a 0.5% rate reduction on ${fmt0(loanSpend)}/mo of obligations matters significantly over the life of the loan.`});
+  }
+  /* 6. Auto / fuel: if meaningful */
+  const autoSpend=t.byCatAvg.auto||0;
+  if(autoSpend>0){
+    wins.push({score:autoSpend*0.08, text:`Auto costs (fuel, licensing) average ${fmt0(autoSpend)}/mo. Consolidating trips and checking tyre pressure monthly can reduce fuel consumption by 5–10% — roughly ${fmt0(autoSpend*0.08)}/mo.`});
+  }
+  /* 7. Structural gap fallback */
+  if(wins.length<3){
+    wins.push({score:0, text:'Your spending categories are close to guideline. The gap is likely structural — focus on the Income Map revenue target and consider refinancing fixed obligations.'});
+  }
+  /* sort by estimated saving, take top 5 */
+  return wins.sort((a,b)=>b.score-a.score).slice(0,5).map(w=>w.text);
+}
+
 function renderPlan(){
   const el=$('v-plan'); const t=t12(); const im=incomeMapNumbers(); const S=state.settings;
   const mw=minWageNumbers();
@@ -34,14 +83,10 @@ function renderPlan(){
     .sort((a,b)=>b.excess-a.excess);
   const stratLines=excess.slice(0,4).map(x=>
     `• <b>${x.c.name}</b> runs ${fmt0(x.spend)}/mo — ${(x.spend/netRef*100).toFixed(1)}% of net income vs a ${x.c.guide}% guideline. Bringing it to the guideline frees <b>${fmt0(x.excess)}/mo (${fmt0(x.excess*12)}/yr)</b>.`).join('<br>');
-  const quickWins=[
-    'Audit subscriptions: cancel anything unused for 60+ days — usually 1–3% of net recovered.',
-    'Meal-prep 2 extra days a week; restaurant spend typically drops 20–30%.',
-    'Bundle motor + home insurance and re-quote annually — 10–15% savings are common.',
-    'Ask your lender about refinancing/shortening loans — even 0.5% matters over years.',
-    'Shift grocery runs to bulk/wholesale cycles and plan around sales.',
-    'If the gap persists, treat it as an income problem: the Income Map shows the revenue target.'
-  ];
+
+  /* IMPROVEMENT 3 — personalised quick wins (replaces generic boilerplate) */
+  const quickWins = buildQuickWins(t, excess, netRef);
+
   el.innerHTML=`
   <div class="card">
     <div class="cardhead"><h3 style="margin:0">💡 Where you stand</h3><span class="grow"></span>
@@ -101,10 +146,9 @@ function renderPlan(){
           <td><button class="btn ghost small" onclick="setBudget('${x.c.id}',${Math.round(x.guide/10)*10})">set as budget</button></td></tr>`).join('')}</tbody></table>
         <div style="margin-top:10px">${stratLines}</div>`:
         '<p class="mut">No category is dramatically above guideline — your deficit (if any) is structural: income vs fixed obligations. Focus on the Income Map revenue target and refinancing fixed costs.</p>'}
-      <h3 style="margin-top:14px">Quick wins, biggest-impact first</h3>
+      <h3 style="margin-top:14px">🎯 Biggest savings opportunities — based on your actual spending</h3>
       <div class="small" style="line-height:1.9">${quickWins.map(q=>'• '+q).join('<br>')}</div>
       <p class="hint" style="margin-top:8px">⚠️ Educational guidance only — not financial advice.</p>
     </div>
   </details>`;
 }
-

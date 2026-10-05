@@ -75,7 +75,25 @@ function renderIncome(){
       </div>
     </div>
   </div>`:'';
+
+  /* ----------------------------------------------------------------
+     IMPROVEMENT 6 — Income base toggle buttons rendered in the map header
+  ---------------------------------------------------------------- */
+  const baseToggle=`
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <span class="mut small">Income base for map calculations:</span>
+      <button class="btn small ${UI.incomeMapBase==='t12'?'':'ghost'}" onclick="UI.incomeMapBase='t12';renderIncome();renderDash();renderPlan()">
+        📊 Trailing-12 avg ${im.t.incAvg>0?'('+fmt0(im.t.incAvg)+'/mo)':''}
+      </button>
+      <button class="btn small ${UI.incomeMapBase==='streams'?'':'ghost'}" onclick="UI.incomeMapBase='streams';renderIncome();renderDash();renderPlan()">
+        🔁 Recurring streams only ${im.streamsMonthly>0?'('+fmt0(im.streamsMonthly)+'/mo)':''}
+      </button>
+      ${im.usingStreams?`<span class="chip amber">Using streams only — irregular income excluded from projection</span>`
+        :`<span class="chip grey">Trailing-12 includes all income types; switch to streams for irregular-income households</span>`}
+    </div>`;
+
   el.innerHTML=`
+  ${baseToggle}
   <div class="grid2">
     <div class="card">
       <h3>💵 Income streams</h3>
@@ -126,7 +144,7 @@ function renderIncome(){
     <table class="t ladder">
       <thead><tr><th>Level</th><th class="num">Take-home needed /mo</th><th class="num">/yr</th><th class="num">Gross salary needed /mo</th><th class="num">/yr</th><th>Status vs your ${fmt0(im.netMonthly)}/mo</th></tr></thead>
       <tbody>${ladder}</tbody></table>
-    <p class="hint" style="margin-top:8px">Tax inversion solves gross ↔ net exactly (binary search on the allowance + rate you set). “Survival” counts your obligations &amp; essentials only.</p>
+    <p class="hint" style="margin-top:8px">Tax inversion solves gross ↔ net exactly (binary search on the allowance + rate you set). "Survival" counts your obligations &amp; essentials only.</p>
   </div>
   ${lensCard}
   <div class="grid2">
@@ -170,4 +188,3 @@ function postStreams(){
   store.save(); renderAll(); toast(added+' income entries posted'+(skipped?' ('+skipped+' already posted)':''));
 }
 function setSetting(k,v){ state.settings[k]=parseAmt(v)||0; store.save(); renderIncome(); renderDash(); renderPlan(); }
-

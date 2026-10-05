@@ -1,10 +1,51 @@
 /* ================================================================
    EXPORT / IMPORT / MENU / ROUTER / BOOT
    ================================================================ */
+
+/* ----------------------------------------------------------------
+   IMPROVEMENT 5 — Full CSV export including all attribution fields
+   Original export lost: household_member, project, project_item,
+   income_type. All are now included so external analysis retains
+   the full attribution context.
+---------------------------------------------------------------- */
+function memberName(id){
+  if(!id) return '';
+  const m=(state.household.members||[]).find(x=>x.id===id);
+  return m? m.name : '';
+}
+function projectName(id){
+  if(!id) return '';
+  const p=(state.projects||[]).find(x=>x.id===id);
+  return p? p.name : '';
+}
+function projectItemName(pid,iid){
+  if(!pid||!iid) return '';
+  const p=(state.projects||[]).find(x=>x.id===pid);
+  if(!p) return '';
+  const i=(p.items||[]).find(x=>x.id===iid);
+  return i? i.name : '';
+}
+/* an expense spent on a project that has since been archived keeps its attribution
+   in the export (the live link is released so monthly category totals stay intact) */
+function txProjectId(t){ return t.projectId || t._archivedProjectId || '' }
+function txProjectItemId(t){ return t.projectId? (t.projectItemId||'') : '' }
 function csvOf(ts){
   const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
-  const head=['date','category','subcategory','description','amount','source','tax_deductible'];
-  return [head.join(',')].concat(ts.map(t=>[t.date,t.cat,t.sub||'',t.desc||'',t.amt.toFixed(2),t.src,t.ded?'yes':'no'].map(q).join(','))).join('\n');
+  const head=['date','category','subcategory','description','amount','source','tax_deductible',
+               'income_type','household_member','project','project_item'];
+  return [head.join(',')].concat(ts.map(t=>[
+    t.date,
+    t.cat,
+    t.sub||'',
+    t.desc||'',
+    t.amt.toFixed(2),
+    t.src,
+    t.ded?'yes':'no',
+    t.cat==='income'? incomeTypeLabel(t.incomeType||'other_income') : '',
+    memberName(t.memberId),
+    projectName(txProjectId(t)),
+    projectItemName(txProjectId(t), txProjectItemId(t))
+  ].map(q).join(','))).join('\n');
 }
 function exportCSV(filtered){
   let ts=filtered? ledgerRows(): state.tx.slice();
@@ -30,7 +71,7 @@ function showExportModal(title, content, filename){
   m.innerHTML=`<div class="card" style="max-width:760px;margin:6vh auto;position:relative">
     <button class="btn ghost small" style="position:absolute;top:10px;right:10px" onclick="this.closest('#expModal').style.display='none'">✕ close</button>
     <h3>${esc(title)}</h3>
-    <p class="hint">If the download doesn’t start (the in-app preview blocks downloads), select all text below and copy it.</p>
+    <p class="hint">If the download doesn't start (the in-app preview blocks downloads), select all text below and copy it.</p>
     <button class="btn small" onclick="downloadBlob('${esc(filename)}')">⬇️ Download file</button>
     <textarea id="expTA" spellcheck="false" style="width:100%;height:44vh;margin-top:10px;font-family:ui-monospace,Consolas,monospace;font-size:11.5px">${esc(content)}</textarea>
   </div>`;
@@ -91,5 +132,5 @@ function bootTimeDefaults(){
   UI.editingId=null; UI.candidates=[]; UI.csvCands=[]; UI.emailText=''; UI.ocrMsg=''; UI.parseMsg=''; UI.csvMsg='';
 }
 function renderAll(){
-  renderBanner(); renderDash(); renderLedger(); renderGrid(); renderBudgets(); renderHousehold(); renderProjects(); renderIncome(); renderPlan(); renderIngest(); updateSaveBadge();
+  renderBanner(); renderDash(); renderLedger(); renderGrid(); renderBudgets(); renderHousehold(); renderProjects(); renderIncome(); renderPlan(); renderIngest(); updateSaveBadge(); refreshAlertBadges();
 }

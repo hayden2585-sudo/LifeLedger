@@ -18,7 +18,7 @@ function freshState(){
       taxAllowance:90000, taxRate:25,
       nisPct:5.4, nisCeilingMonthly:13600, healthSurchargeWeekly:8.25, payrollDeductionPct:0,
       savingsTargetPct:10, emergencyMonths:4, businessMarginPct:35, minWageHourly:20.50 },
-    streams:[], tx:[], budgets:{}, household:{members:[]}, projects:[],
+    streams:[], recurringExpenses:[], tx:[], budgets:{}, household:{members:[]}, projects:[],
     meta:{ created:Date.now(), sample:false, init:true }
   };
 }
@@ -37,11 +37,16 @@ function migrateWorkspace(s){
   if(!s||typeof s!=='object') return s;
   if(!Array.isArray(s.household?.members)) s.household={members:[]};
   if(!Array.isArray(s.projects)) s.projects=[];
+  if(!Array.isArray(s.recurringExpenses)) s.recurringExpenses=[];
   for(const p of s.projects){
     if(!p.items||!Array.isArray(p.items)) p.items=[];
     if(!p.type) p.type='home';
     if(!p.priority) p.priority='normal';
     if(!p.status) p.status='planning';
+    /* projects finished before the archive workflow existed are archived on load,
+       so a completed project never keeps cluttering the working list */
+    if(p.archived===undefined) p.archived = (p.status==='completed');
+    if(p.completedAt===undefined) p.completedAt = p.archived? (p.targetDate||p.startDate||null) : null;
     if(!p.fundingPlan) p.fundingPlan={enabled:false,startingReserve:0,oneTimeContribution:0,surplusAllocationPct:0,fixedMonthlyContribution:0};
   }
   return s;
@@ -64,7 +69,8 @@ function migrateIncomeTypes(s){
 }
 let state = null;
 let UI = { view:'dash', month:null, year:null, gridYear:null, ledgerFilter:{cat:'all',src:'all',q:'',month:'all'}, editingId:null,
-  candidates:[], ocrFile:null, ocrURL:null, stressPct:0, cuts:{}, invReturn:7, invYears:10, invContrib:null, showT12:true };
+  candidates:[], ocrFile:null, ocrURL:null, stressPct:0, cuts:{}, invReturn:7, invYears:10, invContrib:null, showT12:true,
+  incomeMapBase:'t12' /* 't12' | 'streams' */, alertsDismissed:{}, compareYear:null };
 
 /* ---------------- small utils ---------------- */
 const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -137,3 +143,54 @@ function vendorFromEmail(fromLine){
   return dom? dom.charAt(0).toUpperCase()+dom.slice(1) : null;
 }
 
+/* ----------------------------------------------------------------
+   IMPROVEMENT 1 — Storage loss modal
+   A prominent, blocking first-load warning when localStorage is
+   unavailable, so nobody spends an evening entering data that will
+   vanish on close. The old save badge is still there, but nobody
+   reads a badge — this one you have to acknowledge.
+   Called once from boot(); never shown when storage works.
+---------------------------------------------------------------- */
+let storageWarned=false;   /* session-scoped: don't nag on every re-render */
+function showStorageWarning(){
+  if(store.ok || storageWarned) return;
+  storageWarned=true;
+  const m=document.createElement('div');
+  m.id='storageWarnModal';
+  m.setAttribute('role','alertdialog');
+  m.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.7);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px';
+  m.innerHTML=`<div style="background:#fff;border-radius:14px;padding:28px 26px;max-width:480px;box-shadow:0 20px 50px rgba(0,0,0,.3)">
+    <div style="font-size:36px;margin-bottom:10px">⚠️</div>
+    <h2 style="margin:0 0 10px;color:#c62f2f">Data will not be saved</h2>
+    <p style="margin:0 0 14px;font-size:13.5px;line-height:1.6">
+      LifeLedger cannot access your browser's local storage in this environment.
+      Any entries you make <strong>will be lost</strong> when you close this tab.
+    </p>
+    <p style="margin:0 0 18px;font-size:13px;color:#67707f;line-height:1.6">
+      This usually happens when the file is opened from a sandboxed preview, a restricted browser profile,
+      or private/incognito mode. Open the file directly in Chrome, Edge, or Firefox for full storage access.
+      Use <strong>Data ▸ Export JSON</strong> before closing to preserve any work you do now.
+    </p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button onclick="document.getElementById('storageWarnModal').remove()" style="background:#3450b4;color:#fff;border:0;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer">I understand — continue anyway</button>
+      <button onclick="exportJSON();document.getElementById('storageWarnModal').remove()" style="background:#fff;color:#3450b4;border:1px solid #c6cfe6;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer">Export JSON first</button>
+    </div>
+  </div>`;
+  document.body.appendChild(m);
+}
+/* ---- nav tab badges: surface alert counts on the tabs themselves ---- */
+function refreshAlertBadges(){
+  const counts={}; let n=0;
+  for(const a of (typeof visibleAlerts==='function'? visibleAlerts(): [])){ counts[a.view]=(counts[a.view]||0)+1; n++ }
+  document.querySelectorAll('nav#tabs .tab').forEach(b=>{
+    const v=b.dataset.v, c=counts[v]||0;
+    let badge=b.querySelector('.tabbadge');
+    if(c>0){
+      if(!badge){ badge=document.createElement('span'); badge.className='tabbadge'; b.appendChild(badge) }
+      badge.textContent=String(c);
+      badge.title=c+' item(s) need attention on this tab';
+    } else if(badge) badge.remove();
+  });
+  const t=document.querySelector('nav#tabs .tab[data-v="dash"]');
+  if(t) t.title = n? n+' open alert(s) on the dashboard' : 'No open alerts';
+}
