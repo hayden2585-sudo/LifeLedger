@@ -1,0 +1,76 @@
+name: LifeLedger Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: node build.mjs --all
+      - name: Package web and PWA
+        run: |
+          cd dist-pwa
+          zip -r ../LifeLedger-${GITHUB_REF_NAME}-pwa.zip .
+          cd ../web
+          zip -r ../LifeLedger-${GITHUB_REF_NAME}-web.zip lifeledger.html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-pwa-${{ github.ref_name }}
+          path: |
+            LifeLedger-${{ github.ref_name }}-pwa.zip
+            LifeLedger-${{ github.ref_name }}-web.zip
+
+  windows:
+    runs-on: windows-latest
+    needs: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: node build.mjs --desktop
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm ci
+      - name: Build Windows installer and portable app
+        working-directory: desktop
+        run: npm run dist:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ github.ref_name }}
+          path: desktop/release/*
+          if-no-files-found: error
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [web, windows]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Create checksum manifest
+        shell: bash
+        run: |
+          find artifacts -type f -print0 | sort -z | xargs -0 sha256sum > artifacts/SHA256SUMS.txt
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**
+          generate_release_notes: true

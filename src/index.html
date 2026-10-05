@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LifeLedger — Expense & Income Spreadsheet</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">▦</span> LifeLedger <span class="tag">expense &amp; income spreadsheet</span></div>
+  <div class="top-actions">
+    <span id="saveBadge" class="badge">…</span>
+    <select id="currencySel" title="Currency" onchange="setCurrency(this.value)"></select>
+    <div class="menu">
+      <button onclick="toggleMenu(event)">Data ▾</button>
+      <div id="dataMenu" class="dropdown">
+        <button onclick="exportCSV()">⬇️ Export transactions (CSV)</button>
+        <button onclick="exportGridCSV()">⬇️ Export annual grid (CSV)</button>
+        <button onclick="exportJSON()">⬇️ Export backup (JSON)</button>
+        <button onclick="importJSONClick()">⬆️ Import backup (JSON)</button>
+        <hr>
+        <button onclick="loadSample()">🎲 Load sample data</button>
+        <button onclick="clearSample()">🧹 Clear sample data</button>
+        <button class="dangerText" style="color:#c62f2f" onclick="resetAll(this)">⚠️ Reset everything</button>
+      </div>
+    </div>
+    <input type="file" id="jsonFile" accept=".json,application/json" style="display:none" onchange="importJSONFile(this)">
+  </div>
+</header>
+
+<nav id="tabs">
+  <button class="tab active" data-v="dash"   onclick="showView('dash')">📊 Dashboard</button>
+  <button class="tab" data-v="ledger" onclick="showView('ledger')">📒 Ledger</button>
+  <button class="tab" data-v="grid"   onclick="showView('grid')">🗓️ Annual Grid</button>
+  <button class="tab" data-v="budgets" onclick="showView('budgets')">🎯 Budgets</button>
+  <button class="tab" data-v="household" onclick="showView('household')">🏠 Household</button>
+  <button class="tab" data-v="projects" onclick="showView('projects')">🛠️ Projects</button>
+  <button class="tab" data-v="income" onclick="showView('income')">🧭 Income Map</button>
+  <button class="tab" data-v="plan"   onclick="showView('plan')">💡 Plan &amp; Advice</button>
+  <button class="tab" data-v="ingest" onclick="showView('ingest')">➕ Add Data</button>
+</nav>
+
+<main>
+  <div id="banner"></div>
+  <section id="v-dash" class="view on"></section>
+  <section id="v-ledger" class="view"></section>
+  <section id="v-grid" class="view"></section>
+  <section id="v-budgets" class="view"></section>
+  <section id="v-household" class="view"></section>
+  <section id="v-projects" class="view"></section>
+  <section id="v-income" class="view"></section>
+  <section id="v-plan" class="view"></section>
+  <section id="v-ingest" class="view"></section>
+</main>
+<footer>LifeLedger · all data stays in your browser (local storage) · educational tool — not financial or tax advice</footer>
+<div id="toast" class="toast"></div>
+
+<script src="js/01-core.js"></script>
+<script src="js/02-state.js"></script>
+<script src="js/03-sample.js"></script>
+<script src="js/04-charts.js"></script>
+<script src="js/05-engine.js"></script>
+<script src="js/06-view-dashboard.js"></script>
+<script src="js/07-view-ledger.js"></script>
+<script src="js/08-view-grid.js"></script>
+<script src="js/09-view-budgets.js"></script>
+<script src="js/10-view-income.js"></script>
+<script src="js/11-view-plan.js"></script>
+<script src="js/12-view-ingest.js"></script>
+<script src="js/13-io.js"></script>
+<script src="js/15-view-household.js"></script>
+<script src="js/16-view-projects.js"></script>
+<script src="js/14-boot.js"></script>
+</body>
+</html>

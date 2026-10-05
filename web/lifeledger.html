@@ -1,0 +1,1819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LifeLedger — Expense & Income Spreadsheet</title>
+<style>
+:root{
+  --bg:#eef1f6; --card:#ffffff; --ink:#1c2333; --mut:#67707f; --line:#e3e7ef;
+  --brand:#3450b4; --brand2:#263d8f; --green:#15803d; --greenbg:#e8f6ee;
+  --red:#c62f2f; --redbg:#fdecec; --amber:#b45309; --amberbg:#fdf3e4;
+  --violet:#6d28d9; --sky:#0369a1; --head:#1f2a4d;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+button{font:inherit}
+h1,h2,h3{margin:0 0 8px}
+h3{font-size:15px}
+a{color:var(--brand)}
+.mut{color:var(--mut)} .small{font-size:12px} .b{font-weight:600}
+
+/* ---------- header / nav ---------- */
+header.top{background:var(--head);color:#fff;padding:10px 18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;position:sticky;top:0;z-index:50}
+.brand{font-size:17px;font-weight:700;letter-spacing:.2px;display:flex;align-items:center;gap:9px}
+.brand .logo{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:7px;background:linear-gradient(135deg,#4f6fd8,#8b5cf6);font-size:15px}
+.brand .tag{font-weight:400;font-size:11.5px;opacity:.75;margin-left:2px}
+.top-actions{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.top-actions select, .top-actions button{background:#2c3a66;color:#fff;border:1px solid #44528a;border-radius:7px;padding:5px 10px;font-size:12.5px;cursor:pointer}
+.top-actions button:hover{background:#3a4a7d}
+.badge{font-size:11px;padding:4px 9px;border-radius:20px;border:1px solid #44528a;white-space:nowrap}
+.badge.warn{background:#7c2d12;border-color:#f59e0b;color:#fde68a}
+.menu{position:relative}
+.dropdown{display:none;position:absolute;right:0;top:calc(100% + 6px);background:#fff;color:var(--ink);border:1px solid var(--line);border-radius:10px;min-width:250px;box-shadow:0 12px 30px rgba(15,23,42,.18);padding:6px;z-index:60}
+.dropdown.open{display:block}
+.dropdown button{display:block;width:100%;text-align:left;background:none;border:0;color:var(--ink);padding:8px 10px;border-radius:7px;font-size:13px;cursor:pointer}
+.dropdown button:hover{background:#f1f4fa}
+.dropdown hr{border:0;border-top:1px solid var(--line);margin:5px 2px}
+nav#tabs{background:#fff;border-bottom:1px solid var(--line);padding:0 16px;display:flex;gap:2px;overflow-x:auto;position:sticky;top:51px;z-index:40}
+.tab{background:none;border:0;border-bottom:3px solid transparent;padding:11px 14px 8px;cursor:pointer;font-size:13.5px;color:var(--mut);white-space:nowrap}
+.tab:hover{color:var(--ink)}
+.tab.active{color:var(--brand);border-bottom-color:var(--brand);font-weight:600}
+
+/* ---------- layout ---------- */
+main{max-width:1320px;margin:16px auto 40px;padding:0 16px}
+.view{display:none}
+.view.on{display:block;animation:fade .15s ease}
+@keyframes fade{from{opacity:.4}to{opacity:1}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:16px;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+.card h3{display:flex;align-items:center;gap:8px}
+.cardhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.cardhead .grow{flex:1}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px}
+.grid2 > .card{margin-bottom:0}
+.grid2{margin-bottom:16px}
+.banner{background:var(--amberbg);border:1px solid #f2d3a2;color:#7c4a03;border-radius:10px;padding:9px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px}
+
+/* ---------- widgets ---------- */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+.kpi .lbl{font-size:11.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px}
+.kpi .v{font-size:21px;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums}
+.kpi .sub{font-size:11.5px;color:var(--mut);margin-top:2px}
+.chip{display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:20px}
+.chip.green{background:var(--greenbg);color:var(--green)} .chip.red{background:var(--redbg);color:var(--red)}
+.chip.amber{background:var(--amberbg);color:var(--amber)} .chip.grey{background:#eef0f5;color:var(--mut)}
+.btn{background:var(--brand);color:#fff;border:0;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer}
+.btn:hover{background:var(--brand2)}
+.btn.ghost{background:#fff;color:var(--brand);border:1px solid #c6cfe6}
+.btn.ghost:hover{background:#f2f5fc}
+.btn.danger{background:var(--red)}
+.btn.small{padding:4px 10px;font-size:12px;border-radius:6px}
+.btn.confirm{background:#991b1b;color:#fff}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+label.f{display:block;font-size:12px;color:var(--mut);margin:0 0 3px 1px;font-weight:600}
+input[type=text],input[type=number],input[type=date],select,textarea{width:100%;padding:7px 9px;border:1px solid #c9d0de;border-radius:8px;font:inherit;font-size:13px;background:#fff;color:var(--ink)}
+input:focus,select:focus,textarea:focus{outline:2px solid #bcd0f7;border-color:var(--brand)}
+textarea{resize:vertical}
+.frow{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:10px}
+.checkline{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--ink)}
+.bar{height:9px;background:#edf0f6;border-radius:5px;overflow:hidden;min-width:60px}
+.bar i{display:block;height:100%;border-radius:5px}
+table.t{width:100%;border-collapse:collapse;font-size:13px}
+table.t th{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--mut);text-align:left;padding:7px 9px;border-bottom:2px solid var(--line);background:#fafbfd}
+table.t td{padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:middle}
+table.t tr:hover td{background:#f7f9fd}
+.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pos{color:var(--green)} .neg{color:var(--red)}
+.srcico{font-size:13px}
+details.sec{border:1px solid var(--line);border-radius:10px;margin-bottom:10px;background:#fff}
+details.sec>summary{list-style:none;cursor:pointer;padding:11px 14px;font-weight:600;font-size:13.5px;display:flex;align-items:center;gap:8px}
+details.sec>summary::-webkit-details-marker{display:none}
+details.sec>summary:after{content:"▾";margin-left:auto;color:var(--mut);transition:.15s}
+details.sec[open]>summary:after{transform:rotate(180deg)}
+details.sec .inner{padding:2px 14px 14px}
+.toast{position:fixed;bottom:20px;right:20px;background:#1c2333;color:#fff;padding:11px 16px;border-radius:10px;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.25);opacity:0;transform:translateY(8px);transition:.2s;z-index:100;pointer-events:none;max-width:340px}
+.toast.show{opacity:1;transform:none}
+.dropzone{border:2px dashed #b9c3d6;border-radius:12px;padding:26px;text-align:center;color:var(--mut);cursor:pointer;background:#fafbfe}
+.dropzone.hover{border-color:var(--brand);background:#f0f4ff}
+.dropzone img{max-width:100%;max-height:260px;border-radius:8px;display:block;margin:0 auto}
+.formgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+.hint{font-size:11.5px;color:var(--mut);margin-top:4px}
+.status{font-size:12px;color:var(--mut);margin-top:6px}
+.legendl{display:flex;flex-direction:column;gap:5px;font-size:12.5px}
+.legendl .sw{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:7px;vertical-align:-1px}
+.chart{width:100%;height:auto}
+.scrollx{overflow-x:auto}
+
+/* spreadsheet look */
+.sheet-wrap{overflow:auto;max-height:70vh;border:1px solid #d4d9e4;border-radius:10px;background:#fff}
+table.sheet{border-collapse:separate;border-spacing:0;font-size:12.3px;min-width:1180px}
+table.sheet th, table.sheet td{border-right:1px solid #dde2ec;border-bottom:1px solid #e6eaf2;padding:4px 8px;white-space:nowrap;font-variant-numeric:tabular-nums}
+table.sheet thead th{position:sticky;top:0;background:#eef1f8;color:#3d4661;font-weight:600;z-index:3;border-bottom:2px solid #c9cfdd}
+table.sheet td.c0, table.sheet th.c0{position:sticky;left:0;background:#fff;z-index:2;min-width:225px;max-width:260px;font-weight:500}
+table.sheet thead th.c0{background:#eef1f8;z-index:4}
+table.sheet tr.grp td{background:#f5f6fb;font-weight:700;color:#39415c}
+table.sheet tr.grp td.c0{background:#f5f6fb}
+table.sheet tr.tot td{background:#f2f5ff;font-weight:700;border-top:2px solid #9aa7c7;border-bottom:2px double #9aa7c7}
+table.sheet tr.tot td.c0{background:#f2f5ff}
+table.sheet td.inedit input{width:74px;padding:2px 5px;font-size:12px;border:1px solid #c9d0de;border-radius:5px}
+table.sheet td.cellhit{cursor:pointer}
+table.sheet td.cellhit:hover{background:#e9efff}
+.over{color:var(--red);font-weight:600}
+.under{color:var(--green)}
+
+/* budget cards */
+.bcards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.bcard{border:1px solid var(--line);border-radius:11px;padding:12px 13px;background:#fff}
+.bcard .hd{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.bcard input[type=number]{width:100%;padding:5px 8px}
+.bcard .row{display:flex;justify-content:space-between;font-size:12px;margin-top:6px;align-items:center}
+.ladder td:first-child{font-weight:600}
+footer{max-width:1320px;margin:0 auto;padding:14px 16px 30px;color:var(--mut);font-size:11.5px;text-align:center}
+@media (max-width:760px){
+  nav#tabs{top:0;position:relative}
+  header.top{position:relative}
+  table.t .hide-m, .sheet .hide-m{display:none}
+}
+@media print{ header.top,nav#tabs,.noprint{display:none!important} .view{display:block!important} }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">▦</span> LifeLedger <span class="tag">expense &amp; income spreadsheet</span></div>
+  <div class="top-actions">
+    <span id="saveBadge" class="badge">…</span>
+    <select id="currencySel" title="Currency" onchange="setCurrency(this.value)"></select>
+    <div class="menu">
+      <button onclick="toggleMenu(event)">Data ▾</button>
+      <div id="dataMenu" class="dropdown">
+        <button onclick="exportCSV()">⬇️ Export transactions (CSV)</button>
+        <button onclick="exportGridCSV()">⬇️ Export annual grid (CSV)</button>
+        <button onclick="exportJSON()">⬇️ Export backup (JSON)</button>
+        <button onclick="importJSONClick()">⬆️ Import backup (JSON)</button>
+        <hr>
+        <button onclick="loadSample()">🎲 Load sample data</button>
+        <button onclick="clearSample()">🧹 Clear sample data</button>
+        <button class="dangerText" style="color:#c62f2f" onclick="resetAll(this)">⚠️ Reset everything</button>
+      </div>
+    </div>
+    <input type="file" id="jsonFile" accept=".json,application/json" style="display:none" onchange="importJSONFile(this)">
+  </div>
+</header>
+
+<nav id="tabs">
+  <button class="tab active" data-v="dash"   onclick="showView('dash')">📊 Dashboard</button>
+  <button class="tab" data-v="ledger" onclick="showView('ledger')">📒 Ledger</button>
+  <button class="tab" data-v="grid"   onclick="showView('grid')">🗓️ Annual Grid</button>
+  <button class="tab" data-v="budgets" onclick="showView('budgets')">🎯 Budgets</button>
+  <button class="tab" data-v="household" onclick="showView('household')">🏠 Household</button>
+  <button class="tab" data-v="projects" onclick="showView('projects')">🛠️ Projects</button>
+  <button class="tab" data-v="income" onclick="showView('income')">🧭 Income Map</button>
+  <button class="tab" data-v="plan"   onclick="showView('plan')">💡 Plan &amp; Advice</button>
+  <button class="tab" data-v="ingest" onclick="showView('ingest')">➕ Add Data</button>
+</nav>
+
+<main>
+  <div id="banner"></div>
+  <section id="v-dash" class="view on"></section>
+  <section id="v-ledger" class="view"></section>
+  <section id="v-grid" class="view"></section>
+  <section id="v-budgets" class="view"></section>
+  <section id="v-household" class="view"></section>
+  <section id="v-projects" class="view"></section>
+  <section id="v-income" class="view"></section>
+  <section id="v-plan" class="view"></section>
+  <section id="v-ingest" class="view"></section>
+</main>
+<footer>LifeLedger · all data stays in your browser (local storage) · educational tool — not financial or tax advice</footer>
+<div id="toast" class="toast"></div>
+
+<script>
+"use strict";
+/* ================================================================
+   LifeLedger — personal expense & income spreadsheet
+   Single-file app: no external dependencies. Optional OCR lazy-loads
+   tesseract.js from a CDN only when explicitly enabled by the user.
+   ================================================================ */
+
+/* ---------------- categories & taxonomy ---------------- */
+const GROUPS = {
+  income:      {name:'Income',            color:'#15803d'},
+  obligations: {name:'Obligations',       color:'#4f46e5'},
+  essentials:  {name:'Essentials',        color:'#0284c7'},
+  lifestyle:   {name:'Lifestyle',         color:'#d97706'},
+  occasions:   {name:'Special events, religion & charity', color:'#db2777'},
+  future:      {name:'Future (savings)',  color:'#7c3aed'}
+};
+const CATS = [
+  {id:'income',      name:'Income',                       grp:'income',      icon:'💰', guide:null},
+  {id:'taxes',       name:'Taxes (out-of-pocket)',        grp:'obligations', icon:'🧾', guide:1},
+  {id:'loans',       name:'Loan payments (mortgage/car)', grp:'obligations', icon:'🏦', guide:null},
+  {id:'medical',     name:'Medical & health',             grp:'essentials',  icon:'🩺', guide:5},
+  {id:'groceries',   name:'Groceries',                    grp:'essentials',  icon:'🛒', guide:14},
+  {id:'auto',        name:'Auto (fuel, licensing)',       grp:'essentials',  icon:'🚗', guide:6},
+  {id:'insurance',   name:'Insurance',                    grp:'essentials',  icon:'🛡️', guide:6},
+  {id:'transport',   name:'Transport (maxi, taxi, rides)',grp:'essentials',  icon:'🚌', guide:5},
+  {id:'utilities',   name:'Utilities (light, water, net)',grp:'essentials',  icon:'💡', guide:8},
+  {id:'upkeep',      name:'Upkeep & repairs',             grp:'essentials',  icon:'🔧', guide:3},
+  {id:'toiletries',  name:'Toiletries & personal care',   grp:'essentials',  icon:'🧼', guide:2},
+  {id:'dining',      name:'Dining (restaurants & takeout)',grp:'lifestyle',  icon:'🍽️', guide:7},
+  {id:'entertainment',name:'Entertainment',               grp:'lifestyle',   icon:'🎬', guide:4},
+  {id:'education',   name:'Education',                    grp:'lifestyle',   icon:'📚', guide:3},
+  {id:'subscriptions',name:'Subscriptions',               grp:'lifestyle',   icon:'📺', guide:2},
+  {id:'parties',     name:'Parties & outings',            grp:'lifestyle',   icon:'🎉', guide:4},
+  {id:'events',      name:'Special events (Carnival, Christmas)',grp:'occasions', icon:'🎪', guide:null},
+  {id:'charity',     name:'Religion & charity (tithing, giving)', grp:'occasions', icon:'🙏', guide:null},
+  {id:'savings',     name:'Savings (pay yourself)',       grp:'future',      icon:'🐖', guide:null},
+  {id:'other',       name:'Other / unclassified',         grp:'lifestyle',   icon:'🏷️', guide:3}
+];
+const CAT = Object.fromEntries(CATS.map(c=>[c.id,c]));
+const EXPENSE_CATS = CATS.filter(c=>c.id!=='income');
+
+const CURRENCIES = [['TTD','TT$'],['USD','US$'],['EUR','€'],['GBP','£'],['CAD','CA$'],['XCD','EC$'],['JMD','J$'],['BBD','Bds$'],['INR','₹'],['NGN','₦'],['ZAR','R'],['AUD','A$'],['GHS','GH₵'],['GYD','G$'],['SRD','SR$']];
+
+/* ---------------- income taxonomy ----------------
+   Income remains a single cashflow category for aggregation, but each inflow
+   can carry a more precise type so recurring pay is not confused with arrears,
+   windfalls, capital receipts, benefits, investment income, or rent. */
+const INCOME_TYPES = [
+  {id:'salary',         name:'Salary / wages',          icon:'💼', kind:'recurring'},
+  {id:'side_hustle',    name:'Side hustles / gigs',    icon:'🛠️', kind:'recurring'},
+  {id:'salary_arrears', name:'Salary arrears / back pay', icon:'↩️', kind:'irregular'},
+  {id:'overtime_extra', name:'Overtime / extra duties', icon:'⏱️', kind:'irregular'},
+  {id:'dividends',     name:'Dividends',               icon:'📈', kind:'investment'},
+  {id:'asset_sale',    name:'Sale of assets',          icon:'🏷️', kind:'capital'},
+  {id:'gratuity',      name:'Gratuity',                icon:'🎖️', kind:'benefit'},
+  {id:'welfare',       name:'Welfare benefits',        icon:'🤝', kind:'benefit'},
+  {id:'rent',          name:'Rental income',           icon:'🏠', kind:'property'},
+  {id:'gift_remittance',name:'Gifts / remittances',    icon:'🎁', kind:'transfer'},
+  {id:'other_income',  name:'Other income',            icon:'💵', kind:'other'}
+];
+const INCOME_TYPE = Object.fromEntries(INCOME_TYPES.map(x=>[x.id,x]));
+const INCOME_STREAM_TYPES = INCOME_TYPES.filter(x=>['recurring','investment','property'].includes(x.kind));
+function incomeTypeOptions(sel, streamOnly=false){
+  const xs=streamOnly?INCOME_STREAM_TYPES:INCOME_TYPES;
+  return xs.map(x=>`<option value="${x.id}" ${x.id===sel?'selected':''}>${x.icon} ${x.name}</option>`).join('');
+}
+function incomeTypeLabel(id){ const x=INCOME_TYPE[id]||INCOME_TYPE.other_income; return x.name }
+function incomeTypeBadge(id){ const x=INCOME_TYPE[id]||INCOME_TYPE.other_income; return `${x.icon} ${x.name}` }
+function guessIncomeType(text){
+  const s=' '+String(text||'').toLowerCase()+' ';
+  if(/salary\s*arrears|salary\s*back\s*pay|back\s*pay|arrears|retroactive pay/i.test(s)) return 'salary_arrears';
+  if(/overtime|extra\s+dut(?:y|ies)|additional\s+dut(?:y|ies)|extra\s+duties|honorarium/i.test(s)) return 'overtime_extra';
+  if(/dividend|shareholder\s+payment|share\s+dividend/i.test(s)) return 'dividends';
+  if(/sale\s+of\s+(an?\s+)?asset|asset\s+sale|sold\s+(my\s+)?(car|vehicle|property|house|land|equipment)|sale\s+proceeds|capital\s+receipt/i.test(s)) return 'asset_sale';
+  if(/gratuity|severance\s+gratuity|retirement\s+gratuity/i.test(s)) return 'gratuity';
+  if(/welfare\s+(benefit|payment)|welfare|public\s+assistance|social\s+benefit|employee\s+welfare/i.test(s)) return 'welfare';
+  if(/rental\s+income|rent\s+received|rent\s+from\s+(tenant|property)|tenant\s+payment|lease\s+payment/i.test(s)) return 'rent';
+  if(/gift|remittance|money\s+sent\s+from\s+abroad|money\s+from\s+(family|relative|relatives|overseas)|family\s+support|support\s+from\s+abroad|overseas\s+transfer|international\s+transfer/i.test(s)) return 'gift_remittance';
+  if(/side\s+hustle|side\s+gig|freelance|gig\s+income|consulting\s+fee|market\s+stall|tutoring|contract\s+work/i.test(s)) return 'side_hustle';
+  if(/salary|wages|payroll|pay\s+advice|pay\s+slip|paycheck|net\s+pay|monthly\s+pay/i.test(s)) return 'salary';
+  return null;
+}
+
+/* vendor / keyword hints used by the auto-classifier */
+const VENDOR_HINTS = {
+  events:     ['carnival','fete','mas band','pretty mas','mas costume','costume','jouvert',"j'ouvert",'monday wear','christmas','xmas','parang','black friday','holiday shopping','old year','eid','divali','diwali','phagwa','easter','hamper','toy drive','yearly event'],
+  charity:    ['church','mosque','temple','mandir','charity','charitable','donation','donate','tithe','tithing','offering','alms','zakat','zakaat','red cross','unicef','gofundme','love offering','orphanage','home for aged','foundation gift'],
+  groceries:  ['massy','price smart','pricesmart','tru valu','truvalu','supermarket','grocer','food basket','jta','phoenix park','cost u less','costco'],
+  utilities:  ['t&tec','ttec','electric','wasa','water bill','water and sewerage','flow','bmobile','b mobile','blink','amplia','digicel','internet','broadband','cable'],
+  auto:       ['unipet','np ','n.p.','fuel','gas station','shell','petrotrin','petrol','premium gas','super gas','car wash','vehicle permit','licensing'],
+  dining:     ['kfc','subway','royal castle','pizza hut','dominos','burger king','prestige holdings','restaurant','takeout','take-out','dine','roti','doubles','cafe','coffee','starbucks','bar & grill','grill','sushi','chinese food','lunch'],
+  medical:    ['pharmacy','drug store','drugstore','doctor','clinic','dentist','dental','hospital','optician','medical lab','lab','health centre','health center','pediatrician','physio'],
+  insurance:  ['sagicor','guardian life','guardian general','colonial fire','british american','motor insurance','home insurance','insurance premium','policy premium','assurance'],
+  loans:      ['mortgage','car loan','auto loan','hire purchase','credit union','installment','instalment','loan payment','hpd','tt mortgages','rbc','scotiabank','republic bank','first citizens','bank loan','student loan'],
+  taxes:      ['ird','inland revenue','b.i.r','bir','property tax','income tax payment','vat payment','driver permit','renewal fee','customs'],
+  transport:  ['maxi','taxi','ptsc','bus fare','bolt','uber','ride','ferry','airbridge','air bridge','caribbean airlines','cal ','flight fare','port'],
+  subscriptions:['netflix','spotify','disney','hulu','prime video','amazon prime','youtube premium','icloud','google one','dropbox','adobe','microsoft 365','office 365','apple one','crunchyroll','subscription'],
+  entertainment:['movie towne','cinema','theatre','gym','fitness','concert','party cruise','game','bowling','karaoke','event ticket'],
+  education:  ['school','uwi','utt','sbcs','college','university','tuition','bookstore','books','course','udemy','coursera','exam fee','stationery','uniform'],
+  parties:    ['birthday','wedding','gift','party supplies','lime','outing','beach trip','picnic','all inclusive','all-inclusive','brunch','christening','farewell','decorations'],
+  upkeep:     ['plumber','electrician','mason','carpenter','painter','handyman','repair','maintenance','mechanic','garage','tyre','tire','servicing','ac service','appliance','furniture fix','leak'],
+  toiletries: ['toiletries','soap','shampoo','toothpaste','deodorant','cosmetics','skincare','perfume','tissue','detergent','cleaning supplies','personal care','razor','sanitary'],
+  savings:    ['savings','transfer to savings','deposit','mutual fund','unit trust','utc','money market','investment','credit union shares']
+};
+const GENERIC_HINTS = [
+  [/carnival|christmas|xmas|parang|eid|diwali|divali|phagwa|holiday shopp|old year night/i,'events'],
+  [/tithe|tithing|zakat|donation|charit|church offering|alms/i,'charity'],
+  [/grocer|supermarket|market/i,'groceries'],
+  [/rent|mortgage|loan|hire purchase|installment|instalment/i,'loans'],
+  [/insurance|policy|premium|insure/i,'insurance'],
+  [/electric|water|internet|cable|broadband|phone bill|mobile plan|utilities/i,'utilities'],
+  [/fuel|petrol|gas station|diesel/i,'auto'],
+  [/tax|ird|bir|revenue/i,'taxes'],
+  [/doctor|clinic|dental|pharmacy|medical|health|hospital/i,'medical'],
+  [/restaurant|food|dine|lunch|dinner|snack|cafe|coffee|roti|pizza|burger/i,'dining'],
+  [/netflix|spotify|stream|subscription|membership/i,'subscriptions'],
+  [/school|course|class|book|tuition|education|exam/i,'education'],
+  [/movie|cinema|game|entertainment|concert|fete|gym/i,'entertainment'],
+  [/party|birthday|gift|wedding|lime|outing|event/i,'parties'],
+  [/maxi|taxi|bus|uber|bolt|ride|flight|travel/i,'transport'],
+  [/repair|fix|service|maintain|plumb|paint|mechanic/i,'upkeep'],
+  [/toilet|soap|shampoo|cosmetic|personal care|hygiene/i,'toiletries'],
+  [/saving|invest|deposit to savings/i,'savings']
+];
+
+/* ---------------- state & storage ---------------- */
+const LSKEY = 'lifeledger.v1';
+const store = {
+  ok: (()=>{ try{ localStorage.setItem('__t','1'); localStorage.removeItem('__t'); return true }catch(e){ return false } })(),
+  save(){ if(this.ok){ try{ localStorage.setItem(LSKEY, JSON.stringify(state)) }catch(e){} } updateSaveBadge() },
+  load(){ if(!this.ok) return null; try{ const s = localStorage.getItem(LSKEY); return s? JSON.parse(s): null }catch(e){ return null } }
+};
+function freshState(){
+  return {
+    /* TT statutory defaults (all editable; verify against your payslip):
+       - TT$90,000 personal allowance; 25% PAYE on chargeable income up to TT$1M (30% above)
+       - Employee NIS: 5.4% of insurable earnings, capped at TT$13,600/month (NIBTT ceiling,
+         combined 16.2% effective 5 Jan 2026, scheduled to rise in 2027)
+       - Health surcharge: FLAT TT$8.25/week when monthly pay > TT$469.99 (TT$4.80/week below) —
+         it is not a percentage
+       - 70% of employee NIS is deductible before PAYE is applied            */
+    settings:{ currency:'TTD', symbol:'TT$',
+      taxAllowance:90000, taxRate:25,
+      nisPct:5.4, nisCeilingMonthly:13600, healthSurchargeWeekly:8.25, payrollDeductionPct:0,
+      savingsTargetPct:10, emergencyMonths:4, businessMarginPct:35, minWageHourly:20.50 },
+    streams:[], tx:[], budgets:{}, household:{members:[]}, projects:[],
+    meta:{ created:Date.now(), sample:false, init:true }
+  };
+}
+/* Bring settings from older saves up to the current schema.
+   Pre-1.2 saves bundled NIS + surcharge into payrollDeductionPct (default 6.3);
+   when we detect that, clear it so deductions aren't double-counted. */
+function migrateSettings(s){
+  if(!s || typeof s!=='object') return freshState().settings;
+  const base=freshState().settings;
+  const isOld=s.nisPct===undefined;
+  for(const k in base){ if(s[k]===undefined) s[k]=base[k] }
+  if(isOld && +s.payrollDeductionPct===6.3) s.payrollDeductionPct=0;
+  return s;
+}
+function migrateWorkspace(s){
+  if(!s||typeof s!=='object') return s;
+  if(!Array.isArray(s.household?.members)) s.household={members:[]};
+  if(!Array.isArray(s.projects)) s.projects=[];
+  for(const p of s.projects){
+    if(!p.items||!Array.isArray(p.items)) p.items=[];
+    if(!p.type) p.type='home';
+    if(!p.priority) p.priority='normal';
+    if(!p.status) p.status='planning';
+    if(!p.fundingPlan) p.fundingPlan={enabled:false,startingReserve:0,oneTimeContribution:0,surplusAllocationPct:0,fixedMonthlyContribution:0};
+  }
+  return s;
+}
+function migrateIncomeTypes(s){
+  if(!s || typeof s!=='object') return s;
+  if(!Array.isArray(s.streams)) s.streams=[];
+  if(!Array.isArray(s.tx)) s.tx=[];
+  for(const stream of s.streams){
+    if(!stream.incomeType) stream.incomeType=guessIncomeType(stream.label);
+    if(!INCOME_TYPE[stream.incomeType]) stream.incomeType='other_income';
+  }
+  for(const t of s.tx){
+    if(t.cat==='income'){
+      if(!t.incomeType) t.incomeType=guessIncomeType((t.sub||'')+' '+(t.desc||''));
+      if(!INCOME_TYPE[t.incomeType]) t.incomeType='other_income';
+    }
+  }
+  return s;
+}
+let state = null;
+let UI = { view:'dash', month:null, year:null, gridYear:null, ledgerFilter:{cat:'all',src:'all',q:'',month:'all'}, editingId:null,
+  candidates:[], ocrFile:null, ocrURL:null, stressPct:0, cuts:{}, invReturn:7, invYears:10, invContrib:null, showT12:true };
+
+/* ---------------- small utils ---------------- */
+const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const $ = id => document.getElementById(id);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+const round2 = n => Math.round(n*100)/100;
+const SYM = () => (state && state.settings.symbol) || 'TT$';
+function fmt(n, dec){ if(n===undefined||n===null||isNaN(n)) return '—';
+  dec = (dec===undefined)?2:dec;
+  const neg = n < -0.004; const v = Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:dec,maximumFractionDigits:dec});
+  return (neg?'−':'') + SYM() + v; }
+function fmt0(n){ return fmt(n,0) }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])) }
+function iso(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0') }
+function todayISO(){ return iso(new Date()) }
+function parseAmt(s){ if(typeof s==='number') return s; if(!s) return 0;
+  s = String(s).replace(/[−–]/g,'-').replace(/[^\d.\-()]/g,''); let neg = /\(.*\)/.test(s) || s.trim().startsWith('-');
+  s = s.replace(/[()\-]/g,''); const v = parseFloat(s); return isNaN(v)? 0 : (neg? -v : v); }
+function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(toast._h); toast._h=setTimeout(()=>t.classList.remove('show'),2600) }
+function catIcon(id){ return (CAT[id]||{}).icon || '🏷️' }
+function catName(id){ return (CAT[id]||{}).name || id }
+
+/* date of tx -> {y,m} */
+function txYM(t){ const p=t.date.split('-'); return {y:+p[0], m:+p[1]-1} }
+function txForMonth(y,m){ return state.tx.filter(t=>{ const p=txYM(t); return p.y===y && p.m===m }) }
+function txForYear(y){ return state.tx.filter(t=> txYM(t).y===y ) }
+function sumT(ts){ return round2(ts.reduce((a,t)=>a+t.amt,0)) }
+
+/* aggregate a tx list */
+function agg(ts){
+  let inc=0, exp=0; const byCat={};
+  for(const t of ts){ if(t.cat==='income'){ inc+=t.amt } else { exp+=t.amt; byCat[t.cat]=(byCat[t.cat]||0)+t.amt } }
+  return {inc:round2(inc), exp:round2(exp), byCat};
+}
+/* last n calendar months incl current -> [{y,m}] oldest first */
+function trailingMonths(n){ const out=[], now=new Date();
+  for(let i=n-1;i>=0;i--){ const d=new Date(now.getFullYear(), now.getMonth()-i, 1); out.push({y:d.getFullYear(), m:d.getMonth()}) } return out }
+/* trailing-12 aggregates (averages per month) */
+function t12(){
+  const ms = trailingMonths(12); let inc=0, exp=0; const byCat={};
+  for(const {y,m} of ms){ const a=agg(txForMonth(y,m)); inc+=a.inc; exp+=a.exp;
+    for(const k in a.byCat) byCat[k]=(byCat[k]||0)+a.byCat[k] }
+  const n=ms.length;
+  const byCatAvg={}; for(const k in byCat) byCatAvg[k]=byCat[k]/n;
+  return { incAvg:inc/n, expAvg:exp/n, byCatAvg, ms, n };
+}
+function latestMonthWithTx(){ let best=null; for(const t of state.tx){ const p=txYM(t);
+    if(!best || p.y>best.y || (p.y===best.y && p.m>best.m)) best=p } return best }
+function monthOptions(sel){ let h=''; const seen={};
+  for(const t of [...state.tx].sort((a,b)=>a.date<b.date?1:-1)){ const p=txYM(t); const k=p.y+'-'+p.m;
+    if(seen[k]) continue; seen[k]=1; h+=`<option value="${k}" ${sel===k?'selected':''}>${MONTHS[p.m]} ${p.y}</option>` }
+  return h }
+function yearOptions(sel){ const ys=[...new Set(state.tx.map(t=>txYM(t).y))].sort((a,b)=>b-a);
+  if(!ys.length) ys.push(new Date().getFullYear());
+  return ys.map(y=>`<option value="${y}" ${y===sel?'selected':''}>${y}</option>`).join('') }
+
+/* ---------------- classification ---------------- */
+function guessCat(text){
+  const s = ' ' + String(text||'').toLowerCase() + ' ';
+  if(guessIncomeType(s)) return 'income';
+  for(const [cat, words] of Object.entries(VENDOR_HINTS)){
+    for(const w of words){ if(s.includes(w)) return cat }
+  }
+  for(const [re,cat] of GENERIC_HINTS){ if(re.test(s)) return cat }
+  return null;
+}
+function vendorFromEmail(fromLine){
+  const m = String(fromLine).match(/<([^>]+)>/); const addr = m? m[1] : String(fromLine);
+  const dom = (addr.split('@')[1]||'').split('.')[0];
+  return dom? dom.charAt(0).toUpperCase()+dom.slice(1) : null;
+}
+
+/* ---------------- sample data ---------------- */
+function buildSample(){
+  const tx=[]; let n=0;
+  const add=(d,cat,sub,desc,amt,src,ded)=>tx.push({id:uid()+('s'+(n++)), date:iso(d), cat, sub, desc, amt:round2(amt), src:src||'manual', ded:!!ded});
+  const R=(a,b)=>a+Math.random()*(b-a);
+  const J=(base,pct)=>base*(1+(Math.random()*2-1)*pct);
+  const pick=arr=>arr[Math.floor(Math.random()*arr.length)];
+  const now=new Date();
+  for(let i=12;i>=0;i--){
+    const base=new Date(now.getFullYear(), now.getMonth()-i, 1);
+    const y=base.getFullYear(), m=base.getMonth();
+    const dim=new Date(y, m+1, 0).getDate();
+    const D=dd=>new Date(y, m, Math.max(1,Math.min(dd,dim)));
+    const raised = i<=4;   /* salary raise in the most recent 4 months */
+    const salary = raised? 14456 : 13900;
+    /* income */
+    add(D(27),'income','Salary','Monthly salary (net take-home)',salary);
+    if(Math.random()<0.62) add(D(randDay(5,25)),'income','Side gigs', pick(['Freelance design','Market stall sales','Weekend tutoring','Consulting fee']), R(300,2600));
+    /* obligations */
+    add(D(28),'loans','Mortgage','Monthly mortgage payment',3800);
+    add(D(10),'loans','Car loan','Auto loan installment',1450);
+    if(m%3===0) add(D(12),'insurance','Guardian General','Motor insurance (quarterly)',J(1410,.08));
+    add(D(5),'insurance','Sagicor','Life insurance premium',218);
+    add(D(5),'insurance','Atlantic Health','Health plan premium',205);
+    if(m%3===1) add(D(20),'taxes','Licensing Office','Vehicle permit / licence renewal',J(180,.15));
+    /* essentials */
+    add(D(6),'groceries','Massy Stores','Grocery haul',J(raised?445:430,.22));
+    add(D(16),'groceries','Massy Stores','Mid-month grocery top-up',J(420,.25));
+    add(D(21),'groceries','Tru Valu','Fresh produce & pantry',J(300,.3));
+    if(m%2===0) add(D(11),'groceries','PriceSmart','Bulk shopping run',J(1150,.15));
+    add(D(14),'utilities','T&TEC','Electricity bill',J(430,.28));
+    add(D(14),'utilities','WASA','Water bill',J(110,.2));
+    add(D(8),'utilities','Flow','Home internet + cable',379);
+    add(D(18),'utilities','bmobile','Mobile plan',J(190,.25));
+    for(let w=0;w<4;w++) add(D(3+w*7),'auto', pick(['NP','Unipet']),'Fuel top-up',J(158,.3));
+    add(D(9),'toiletries', pick(['Pharmacy – personal care','Blush Cosmetics','Care toiletries']),'Toiletries & personal care',J(205,.3));
+    const nRides=5+Math.floor(Math.random()*4);
+    for(let r=0;r<nRides;r++) add(D(randDay(1,28)),'transport', pick(['Maxi','Route taxi','Bolt ride']), pick(['Maxi/taxi fare','Taxi fare','Bolt ride']), J(34,.45));
+    if(Math.random()<0.35) add(D(randDay(1,28)),'medical', pick(['Pharmacy','Doctor visit','Dental cleaning']), pick(['Prescription refill','Doctor consultation','Dental cleaning']), J(270,.4));
+    if(Math.random()<0.25) add(D(randDay(1,28)),'upkeep', pick(['AC service','Plumber','Appliance repair','Handyman']), pick(['AC servicing','Plumbing repair','Washing machine repair','General repairs']), J(430,.5));
+    /* lifestyle */
+    const lunches=1+Math.floor(Math.random()*2);
+    for(let l=0;l<lunches;l++) add(D(randDay(1,28)),'dining', pick(['Lunch takeout','Doubles run','Snack & drink']),'Lunch / takeout',J(78,.3));
+    const fast=1+Math.floor(Math.random()*2);
+    for(let f=0;f<fast;f++) add(D(randDay(1,28)),'dining', pick(['KFC','Subway','Royal Castle','Pizza Hut']),'Fast-food order',J(190,.3));
+    if(Math.random()<0.65) add(D(randDay(10,27)),'dining', pick(['Restaurant dinner','Sushi night','Family dinner out']),'Dinner out',J(520,.4));
+    add(D(3),'subscriptions','Netflix','Streaming subscription',54.99);
+    add(D(3),'subscriptions','Spotify','Music subscription',26.99);
+    add(D(7),'subscriptions','iCloud+','Cloud storage',18.99);
+    if(raised) add(D(12),'subscriptions','Microsoft 365','Productivity subscription',74.99);
+    add(D(2),'entertainment','Gym','Gym membership',260);
+    const mov=1+Math.floor(Math.random()*2);
+    for(let e=0;e<mov;e++) add(D(randDay(1,27)),'entertainment', pick(['Movie Towne','Cinema','Board-game café']),'Movie / outing',J(215,.3));
+    if(Math.random()<0.85) add(D(randDay(4,26)),'parties', pick(['Weekend lime','Friends gathering','Beach lime']),'Weekend lime / outing',J(300,.35));
+    if(Math.random()<0.5) add(D(randDay(1,27)),'parties','Birthday gift','Gift + wrapping',J(245,.4));
+    if(Math.random()<0.25) add(D(randDay(1,27)),'parties', pick(['Fete tickets','All-inclusive brunch','Day pass event']), pick(['Fete tickets','All-inclusive brunch','Event day pass']), J(550,.3));
+    if(Math.random()<0.25) add(D(randDay(1,27)),'education', pick(['Online course','UWI bookshop','Coursera']), pick(['Online course','Books & supplies','Course fee']), J(520,.3));
+    /* future */
+    add(D(25),'savings','Credit union','Automatic savings transfer', raised?700:500);
+  }
+  function randDay(a,b){ return a+Math.floor(Math.random()*(b-a+1)) }
+  const budgets={ loans:5250, groceries:1750, utilities:1150, auto:700, insurance:900, transport:260, dining:620,
+    toiletries:220, subscriptions:185, entertainment:580, parties:420, education:200, medical:220, upkeep:260, savings:600, taxes:80, income:0 };
+  const streams=[ {id:uid(),label:'Salary (net take-home)',monthly:14456}, {id:uid(),label:'Side gigs (average)',monthly:850} ];
+  return {tx, budgets, streams};
+}
+function loadSample(){
+  state = freshState();
+  const s = buildSample();
+  state.tx = s.tx; state.budgets = s.budgets; state.streams = s.streams; state.meta.sample = true;
+  store.save(); bootTimeDefaults(); renderAll(); toast('Sample data loaded — explore, then “Clear sample data” when ready');
+}
+function clearSample(btn){
+  if(state.meta.sample){
+    if(btn && !btn.dataset.armed){ btn.dataset.armed='1'; btn.textContent='Click again to confirm'; setTimeout(()=>{btn.dataset.armed='';btn.textContent='🧹 Clear sample data'},2600); return }
+    state.tx=[]; state.budgets={}; state.streams=[]; state.meta.sample=false; store.save(); bootTimeDefaults(); renderAll(); toast('Sample data cleared — add your own entries');
+  }
+}
+function resetAll(btn){
+  if(btn && !btn.dataset.armed){ btn.dataset.armed='1'; btn.textContent='⚠️ Click again to erase everything'; setTimeout(()=>{btn.dataset.armed='';btn.textContent='⚠️ Reset everything'},2800); return }
+  state=freshState(); store.save(); closeMenu(); bootTimeDefaults(); renderAll(); toast('Everything reset');
+}
+
+/* ================================================================
+   CHART HELPERS (pure inline SVG — no libraries)
+   ================================================================ */
+function donutSVG(items){
+  const S=190, r=72, sw=30, c=S/2, C=2*Math.PI*r;
+  const total=items.reduce((a,b)=>a+b.val,0);
+  let off=C*0.25, segs='';
+  for(const it of items){ if(it.val<=0) continue;
+    const len=Math.max(0,it.val/ (total||1) *C);
+    segs+=`<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${it.color}" stroke-width="${sw}" stroke-dasharray="${len.toFixed(2)} ${(C-len).toFixed(2)}" stroke-dashoffset="${off.toFixed(2)}"/>`;
+    off-=len; }
+  return `<svg viewBox="0 0 ${S} ${S}" class="chart" style="max-width:200px;display:block;margin:auto">${segs}
+    <text x="${c}" y="${c-4}" text-anchor="middle" font-size="11" fill="#67707f">TOTAL</text>
+    <text x="${c}" y="${c+15}" text-anchor="middle" font-size="14.5" font-weight="700" fill="#1c2333">${fmt0(total)}</text></svg>`;
+}
+function bars12SVG(data){
+  const W=780, H=250, padL=58, padR=8, padB=26, padT=12;
+  const max=Math.max(1,...data.map(d=>Math.max(d.inc,d.exp)));
+  const iw=(W-padL-padR)/data.length, bw=Math.max(5,Math.min(15,iw*0.30));
+  let grid='', bars='', labels='';
+  for(let g=0; g<=4; g++){ const v=max*g/4, y=H-padB-(v/max)*(H-padB-padT);
+    grid+=`<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="#e9edf4"/><text x="${padL-7}" y="${y+4}" text-anchor="end" font-size="10.5" fill="#8a93a5">${fmtK(v)}</text>` }
+  data.forEach((d,i)=>{ const cx=padL+i*iw+iw/2;
+    const hi=Math.max(1,d.inc), he=Math.max(1,d.exp);
+    const yi=H-padB-(hi/max)*(H-padB-padT), ye=H-padB-(he/max)*(H-padB-padT);
+    bars+=`<rect x="${(cx-bw-1.5).toFixed(1)}" y="${yi.toFixed(1)}" width="${bw}" height="${(H-padB-yi).toFixed(1)}" rx="2.5" fill="#2f9e5f"/>
+           <rect x="${(cx+1.5).toFixed(1)}" y="${ye.toFixed(1)}" width="${bw}" height="${(H-padB-ye).toFixed(1)}" rx="2.5" fill="#e05252"/>`;
+    labels+=`<text x="${cx}" y="${H-8}" text-anchor="middle" font-size="10.5" fill="#67707f">${d.label}</text>` });
+  return `<svg viewBox="0 0 ${W} ${H}" class="chart">${grid}${bars}${labels}</svg>`;
+}
+function lineNetSVG(maxG, netFn, needAnnual, marks){
+  const W=780, H=270, padL=64, padR=14, padB=34, padT=14;
+  const maxY=Math.max(netFn(maxG), needAnnual)*1.06;
+  const X=g=>padL+(g/maxG)*(W-padL-padR), Y=v=>H-padB-(v/maxY)*(H-padB-padT);
+  let pts=''; const steps=64;
+  for(let i=0;i<=steps;i++){ const g=maxG*i/steps; pts+=(i?' L':'M')+X(g).toFixed(1)+' '+Y(netFn(g)).toFixed(1) }
+  let grid=''; for(let g=0;g<=4;g++){ const v=maxY*g/4, y=Y(v);
+    grid+=`<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W-padR}" y2="${y.toFixed(1)}" stroke="#e9edf4"/><text x="${padL-7}" y="${(y+4).toFixed(1)}" text-anchor="end" font-size="10.5" fill="#8a93a5">${fmtK(v)}</text>` }
+  for(let g=0;g<=4;g++){ const gv=maxG*g/4, x=X(gv);
+    grid+=`<text x="${x.toFixed(1)}" y="${H-10}" text-anchor="middle" font-size="10.5" fill="#8a93a5">${fmtK(gv)}</text>` }
+  let mk='';
+  for(const m of marks){ const x=X(m.gross), y=Y(netFn(m.gross));
+    mk+=`<line x1="${x.toFixed(1)}" y1="${padT}" x2="${x.toFixed(1)}" y2="${H-padB}" stroke="${m.color}" stroke-dasharray="4 4" opacity=".8"/>
+         <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4.5" fill="${m.color}"/>
+         <text x="${Math.min(x+6,W-150).toFixed(1)}" y="${Math.max(padT+12,y-10).toFixed(1)}" font-size="11" font-weight="600" fill="${m.color}">${esc(m.label)}</text>` }
+  const yNeed=Y(needAnnual);
+  return `<svg viewBox="0 0 ${W} ${H}" class="chart">${grid}
+    <line x1="${padL}" y1="${yNeed.toFixed(1)}" x2="${W-padR}" y2="${yNeed.toFixed(1)}" stroke="#b45309" stroke-width="2" stroke-dasharray="7 5"/>
+    <text x="${W-padR-4}" y="${(yNeed-7).toFixed(1)}" text-anchor="end" font-size="11" font-weight="600" fill="#b45309">Lifestyle + savings need ${fmt0(needAnnual)}</text>
+    <path d="${pts}" fill="none" stroke="#3450b4" stroke-width="2.5"/>${mk}</svg>`;
+}
+function growthSVG(contrib, ratePct, years, lump){
+  const W=780, H=250, padL=64, padR=14, padB=28, padT=12;
+  const i=ratePct/100/12, n=years*12;
+  const series=[]; let bal=lump||0;
+  for(let m=0;m<=n;m++){ if(m>0){ bal=bal*(1+i)+contrib } series.push(bal) }
+  const maxV=Math.max(...series,1);
+  const X=m=>padL+(m/n)*(W-padL-padR), Y=v=>H-padB-(v/maxV)*(H-padB-padT);
+  let grid=''; for(let g=0;g<=4;g++){ const v=maxV*g/4,y=Y(v);
+    grid+=`<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W-padR}" y2="${y.toFixed(1)}" stroke="#e9edf4"/><text x="${padL-7}" y="${(y+4).toFixed(1)}" text-anchor="end" font-size="10.5" fill="#8a93a5">${fmtK(v)}</text>` }
+  let ticks=''; for(let yr=0;yr<=years;yr+=Math.max(1,Math.round(years/6))){ ticks+=`<text x="${X(yr*12).toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="10.5" fill="#67707f">${yr}y</text>` }
+  let path=''; series.forEach((v,m)=>{ path+=(m?' L':'M')+X(m).toFixed(1)+' '+Y(v).toFixed(1) });
+  const contribTotal=lump+contrib*n;
+  const area=`M${X(0)} ${Y(0)} L${path.slice(1)} L${X(n)} ${Y(0)} Z`;
+  return { svg:`<svg viewBox="0 0 ${W} ${H}" class="chart">${grid}
+      <path d="${area}" fill="#6d28d9" opacity="0.08"/>
+      <path d="M${X(0)} ${Y(contribTotal).toFixed(1)} L${X(n)} ${Y(contribTotal).toFixed(1)}" stroke="#94a3b8" stroke-dasharray="5 5"/>
+      <text x="${W-padR-4}" y="${(Y(contribTotal)-6).toFixed(1)}" text-anchor="end" font-size="11" fill="#67707f">contributed ${fmt0(contribTotal)}</text>
+      <path d="${path}" fill="none" stroke="#6d28d9" stroke-width="2.5"/>${ticks}</svg>`,
+    fv: series[series.length-1], contributed: contribTotal };
+}
+function fmtK(v){ if(Math.abs(v)>=1000000) return (v/1000000).toFixed(1).replace(/\.0$/,'')+'M';
+  if(Math.abs(v)>=1000) return (v/1000).toFixed(v>=10000?0:1).replace(/\.0$/,'')+'k'; return Math.round(v) }
+
+/* ================================================================
+   SHARED NUMBER CRUNCHING
+   ================================================================ */
+function monthStats(y,m){
+  const a=agg(txForMonth(y,m));
+  const over=[];
+  let budgetTotal=0, overspendTotal=0;
+  for(const c of EXPENSE_CATS){ const bud=+state.budgets[c.id]||0; const act=a.byCat[c.id]||0;
+    if(bud>0){ budgetTotal+=bud; if(act>bud){ overspendTotal+=act-bud; over.push({cat:c.id, act, bud, by:act-bud}) } } }
+  over.sort((x,z)=>z.by-x.by);
+  return { inc:a.inc, exp:a.exp, byCat:a.byCat, over, budgetTotal, overspendTotal,
+    adherence: budgetTotal? Math.max(0,100-overspendTotal/budgetTotal*100): null };
+}
+/* tax / net-pay engine (annual figures), itemised TT statutory deductions:
+   - NIS: nisPct% of insurable earnings only, capped at nisCeilingMonthly x 12 (nothing above)
+   - Health surcharge: flat weekly amount; lower statutory rate (TT$4.80/wk) at or under TT$469.99/mo
+   - 70% of employee NIS is deductible from income before PAYE (with the personal allowance)
+   - payrollDeductionPct covers OTHER deductible deductions (pension etc.)                 */
+function netFromGross(grossAnnual){
+  const s=state.settings, g=Math.max(0,grossAnnual);
+  const nis=Math.min(g,(+s.nisCeilingMonthly||0)*12)*(+s.nisPct||0)/100;
+  const surcharge=g>0? ((g/12)>469.99? (+s.healthSurchargeWeekly||0) : 4.80)*52 : 0;
+  const other=g*(+s.payrollDeductionPct||0)/100;
+  const taxable=Math.max(0, g-0.70*nis-other-s.taxAllowance);
+  const tax=taxable<=1000000? taxable*s.taxRate/100 : 1000000*s.taxRate/100+(taxable-1000000)*0.30;
+  return g-nis-surcharge-other-tax;
+}
+function grossForNet(netAnnual){
+  let lo=0, hi=Math.max(netAnnual*2.5, state.settings.taxAllowance+netAnnual);
+  for(let k=0;k<90;k++){ const mid=(lo+hi)/2; if(netFromGross(mid)<netAnnual) lo=mid; else hi=mid }
+  /* netFromGross has a small step DOWN where the health surcharge switches from $4.80 to $8.25/wk;
+     walk down so we return the LOWEST gross that still reaches the target net */
+  let g=(lo+hi)/2, step=64;
+  while(step>=0.001){ if(netFromGross(g-step)>=netAnnual) g-=step; else step/=2 }
+  return g;
+}
+function etr(grossAnnual){ if(grossAnnual<=0) return 0; return (grossAnnual-netFromGross(grossAnnual))/grossAnnual*100 }
+/* ---- minimum-wage lens ---- */
+const FULLTIME_HOURS=173.33;   /* 40 h/week x 52 weeks / 12 months */
+function minWageNumbers(){
+  const S=state.settings;
+  const grossM=(+S.minWageHourly||0)*FULLTIME_HOURS;
+  const netM=grossM>0? netFromGross(grossM*12)/12 : 0;
+  return {hourly:+S.minWageHourly||0, grossM, netM};
+}
+function pctMinWage(amountM){ const mw=minWageNumbers(); return mw.netM>0? amountM/mw.netM*100 : 0 }
+/* the heart of the Income Map */
+function incomeMapNumbers(){
+  const t=t12();
+  const streamsMonthly=state.streams.reduce((a,s)=>a+(+s.monthly||0),0);
+  const netMonthly = t.incAvg>0? t.incAvg : streamsMonthly;
+  const lifestyleM = t.expAvg;                       /* all recorded outflows incl. savings allocations */
+  const savingsAllocM = t.byCatAvg.savings||0;
+  const coreLifestyleM = lifestyleM - savingsAllocM;
+  const savingsGoalM = netMonthly*state.settings.savingsTargetPct/100;
+  const S=state.settings;
+  const needLifestyle = lifestyleM*12;               /* keep current lifestyle exactly */
+  const needWithSavings = (lifestyleM+savingsGoalM)*12;
+  const needComfort = needWithSavings*1.10;
+  const netAnnual=netMonthly*12;
+  return { t, netMonthly, streamsMonthly, lifestyleM, coreLifestyleM, savingsAllocM, savingsGoalM,
+    needLifestyle, needWithSavings, needComfort, netAnnual,
+    grossCurrent: grossForNet(Math.max(1,netAnnual)),
+    grossLifestyle: grossForNet(Math.max(1,needLifestyle)),
+    grossWithSavings: grossForNet(Math.max(1,needWithSavings)),
+    grossComfort: grossForNet(Math.max(1,needComfort)),
+    gapMonthly: netMonthly-lifestyleM };
+}
+
+/* ================================================================
+   VIEW: DASHBOARD
+   ================================================================ */
+function renderDash(){
+  const el=$('v-dash');
+  if(!state.tx.length){
+    el.innerHTML=`
+    <div class="card" style="text-align:center;padding:46px 20px">
+      <div style="font-size:44px">▦</div>
+      <h2 style="margin:8px 0 6px">Welcome to LifeLedger</h2>
+      <p class="mut" style="max-width:560px;margin:0 auto 18px">
+        A spreadsheet-style workspace for monthly &amp; annual expense tracking, budget overages, income mapping
+        and cost-of-living math. Start with sample data to explore, or add your first entry.</p>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        <button class="btn" onclick="loadSample()">🎲 Load sample data</button>
+        <button class="btn ghost" onclick="showView('ingest')">➕ Add first entry</button>
+        <button class="btn ghost" onclick="showView('ingest');document.getElementById('csvIn').click()">⬆️ Import CSV</button>
+      </div>
+    </div>`;
+    return;
+  }
+  const mk=UI.month, y=mk.y, m=mk.m;
+  const st=monthStats(y,m), t=t12(), im=incomeMapNumbers();
+  const mw=minWageNumbers();
+  const net=st.inc-st.exp;
+  const unspent=st.inc>0? (net/st.inc*100):null;
+  const groupsData=Object.keys(GROUPS).filter(g=>g!=='income').map(g=>{
+    const val=Object.keys(st.byCat).filter(cid=>CAT[cid]&&CAT[cid].grp===g).reduce((a,k)=>a+st.byCat[k],0);
+    return {label:GROUPS[g].name, val, color:GROUPS[g].color};
+  }).filter(d=>d.val>0);
+  const t12groups=Object.keys(GROUPS).filter(g=>g!=='income').map(g=>{
+    const val=Object.keys(t.byCatAvg).filter(cid=>CAT[cid]&&CAT[cid].grp===g).reduce((a,k)=>a+t.byCatAvg[k],0);
+    return {label:GROUPS[g].name, val, color:GROUPS[g].color};
+  }).filter(d=>d.val>0);
+  const bars=t.ms.map(mm=>({label:MONTHS[mm.m], inc:agg(txForMonth(mm.y,mm.m)).inc, exp:agg(txForMonth(mm.y,mm.m)).exp}));
+  const yearAgg=agg(txForYear(y));
+  const kpi=(lbl,val,sub,cls)=>`<div class="kpi"><div class="lbl">${lbl}</div><div class="v ${cls||''}">${val}</div><div class="sub">${sub||''}</div></div>`;
+  el.innerHTML=`
+  <div class="cardhead">
+    <h3 style="margin:0">Month at a glance</h3>
+    <select style="width:auto" onchange="UI.month=parseMK(this.value);renderAll()">${monthOptions(y+'-'+m)}</select>
+    <span class="chip grey">Trailing-12 avg income ${fmt0(t.incAvg)}/mo · expenses ${fmt0(t.expAvg)}/mo</span>
+  </div>
+  <div class="kpis">
+    ${kpi('Take-home income', fmt0(st.inc), 'T12 avg '+fmt0(t.incAvg))}
+    ${kpi('Expenses', fmt0(st.exp), 'T12 avg '+fmt0(t.expAvg))}
+    ${kpi(net>=0?'Surplus':'Deficit', fmt0(net), net>=0?'Keep it up 👍':'Watch this ⚠️', net>=0?'pos':'neg')}
+    ${kpi('Unspent income', unspent==null?'—':unspent.toFixed(1)+'%', unspent==null?'':'of what came in', unspent!=null&&unspent<0?'neg':'')}
+    ${kpi('Budget adherence', st.adherence==null?'—':st.adherence.toFixed(0)+'%', st.over.length? st.over.length+' categorie(s) over':'All within budget', st.over.length?'neg':'pos')}
+    ${kpi('Year '+y+' net', fmt0(yearAgg.inc-yearAgg.exp), 'income '+fmt0(yearAgg.inc)+' · expenses '+fmt0(yearAgg.exp))}
+    ${mw.netM>0? kpi('Lifestyle vs minimum wage', pctMinWage(im.lifestyleM).toFixed(0)+'%', 'a full-time min-wage job nets '+fmt0(mw.netM)+'/mo'):''}
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <div class="cardhead"><h3 style="margin:0">Where the money went</h3>
+        <span class="grow"></span>
+        <button class="btn small ${UI.showT12?'':'ghost'}" onclick="UI.showT12=true;renderDash()">${MONTHS[m]} ${y}</button>
+        <button class="btn small ${UI.showT12?'ghost':''}" onclick="UI.showT12=false;renderDash()">Trailing 12-mo avg</button>
+      </div>
+      <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">
+        <div style="flex:0 0 200px">${donutSVG(UI.showT12?groupsData:t12groups)}</div>
+        <div class="legendl" style="flex:1;min-width:170px">
+          ${(UI.showT12?groupsData:t12groups).map(d=>`<div><span class="sw" style="background:${d.color}"></span>${d.label} — <b>${fmt0(d.val)}</b>${UI.showT12&&st.inc>0?` <span class="mut">(${(d.val/st.exp*100).toFixed(0)}% of spend)</span>`:UI.showT12?'':''}</div>`).join('')}
+          ${!(UI.showT12?groupsData:t12groups).length?'<div class="mut">No expenses recorded.</div>':''}
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>12-month history</h3>
+      ${bars12SVG(bars)}
+      <div class="small mut" style="margin-top:6px"><span class="sw" style="background:#2f9e5f;display:inline-block;width:11px;height:11px;border-radius:3px"></span> Income &nbsp; <span class="sw" style="background:#e05252;display:inline-block;width:11px;height:11px;border-radius:3px"></span> Expenses</div>
+    </div>
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <h3>🎯 Budget overages — ${MONTHS[m]} ${y}</h3>
+      ${st.over.length? st.over.map(o=>`
+        <div style="margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px">
+            <span>${catIcon(o.cat)} ${esc(catName(o.cat))}</span>
+            <span class="neg b">${fmt(o.by)} over <span class="mut">(spent ${fmt0(o.act)} / budget ${fmt0(o.bud)})</span></span>
+          </div>
+          <div class="bar"><i style="width:${Math.min(100,o.act/o.bud*100).toFixed(0)}%;background:#e05252"></i></div>
+        </div>`).join('') + `<button class="btn ghost small" onclick="showView('budgets')">Adjust budgets →</button>`
+        : `<p class="mut" style="margin:6px 0">Every category is within its budget this month. 🎉</p>`}
+    </div>
+    <div class="card">
+      <h3>🧭 Income position</h3>
+      <table class="t ladder">
+        <tr><td>Current lifestyle cost</td><td class="num b">${fmt0(im.lifestyleM)}/mo</td><td class="num mut">${fmt0(im.lifestyleM*12)}/yr</td></tr>
+        <tr><td>Your take-home (12-mo avg)</td><td class="num b ${im.gapMonthly>=0?'pos':'neg'}">${fmt0(im.netMonthly)}/mo</td><td class="num mut">${fmt0(im.netAnnual)}/yr</td></tr>
+        <tr><td>Gross salary that supports this lifestyle</td><td class="num b">${fmt0(im.grossLifestyle/12)}/mo</td><td class="num mut">${fmt0(im.grossLifestyle)}/yr</td></tr>
+        <tr><td>With ${state.settings.savingsTargetPct}% savings goal</td><td class="num b">${fmt0(im.grossWithSavings/12)}/mo</td><td class="num mut">${fmt0(im.grossWithSavings)}/yr</td></tr>
+        <tr><td>Full-time minimum wage (net, ${fmt(mw.hourly)}/hr)</td><td class="num b">${fmt0(mw.netM)}/mo</td><td class="num mut">${fmt0(mw.netM*12)}/yr</td></tr>
+        <tr><td>Your lifestyle vs minimum wage</td><td class="num b">${mw.netM>0?(im.lifestyleM/mw.netM).toFixed(1)+'×':'—'}</td><td class="num mut">${mw.netM>0?pctMinWage(im.lifestyleM).toFixed(0)+'% of it':'—'}</td></tr>
+      </table>
+      <p class="hint" style="margin-top:8px">Full breakdown, tax inversion and the self-employed revenue view → <a href="#" onclick="showView('income');return false">Income Map</a></p>
+    </div>
+  </div>`;
+}
+function parseMK(v){ const p=v.split('-'); return {y:+p[0], m:+p[1]} }
+
+/* ================================================================
+   VIEW: LEDGER (transaction register + entry form)
+   ================================================================ */
+const SRC_META={ manual:['✍️','Manual'], invoice:['🧾','Invoice scan'], email:['📧','Email'], screenshot:['🖼️','Screenshot'], csv:['📄','CSV import'] };
+function catOptions(sel, includeIncome){
+  const gs=['income','obligations','essentials','lifestyle','occasions','future'].filter(g=>includeIncome||g!=='income');
+  return gs.map(g=>`<optgroup label="${GROUPS[g].name}">`+
+    CATS.filter(c=>c.grp===g).map(c=>`<option value="${c.id}" ${c.id===sel?'selected':''}>${c.icon} ${c.name}</option>`).join('')+`</optgroup>`).join('');
+}
+function entryFormHTML(pfx, fixedSrc){
+  const editing = pfx==='led' && UI.editingId;
+  const t = editing? state.tx.find(x=>x.id===UI.editingId): null;
+  const src = t? t.src : (fixedSrc||'manual');
+  const incomeType = t&&t.cat==='income' ? (t.incomeType||'salary') : 'salary';
+  const showIncomeType = t&&t.cat==='income';
+  const subHints=[...new Set(state.tx.filter(x=>x.cat===((t&&t.cat)||'')).map(x=>x.sub).filter(Boolean))];
+  return `
+  <form id="${pfx}Form" onsubmit="saveEntry('${pfx}');return false">
+    <div class="formgrid">
+      <div><label class="f">Date *</label><input type="date" id="${pfx}Date" value="${t? esc(t.date): todayISO()}" required></div>
+      <div><label class="f">Amount (${esc(SYM())}) *</label><input type="number" id="${pfx}Amt" step="0.01" min="0" value="${t? t.amt:''}" placeholder="0.00" required></div>
+      <div><label class="f">Category *</label><select id="${pfx}Cat" onchange="updateSubHints('${pfx}');toggleIncomeType('${pfx}');toggleProjectFields('${pfx}')">${catOptions(t? t.cat:'groceries', true)}</select></div>
+      <div id="${pfx}IncomeTypeWrap" style="display:${showIncomeType?'block':'none'}"><label class="f">Income type *</label><select id="${pfx}IncomeType">${incomeTypeOptions(incomeType)}</select><span class="small mut">Classifies salary, arrears, overtime, dividends, asset sales, benefits, rent and remittances separately.</span></div>
+      <div><label class="f">Household member</label><select id="${pfx}Member"><option value="">🏠 Household / shared</option>${state.household.members.map(m=>`<option value="${m.id}" ${t&&t.memberId===m.id?'selected':''}>${esc(m.name)}</option>`).join('')}</select></div>
+      <div id="${pfx}ProjectWrap" style="display:${t&&t.cat==='income'?'none':'block'}"><label class="f">Project</label><select id="${pfx}Project" onchange="refreshProjectItems('${pfx}')">${projectOptionsForLedger(t?t.projectId:'')}</select></div>
+      <div id="${pfx}ProjectItemWrap" style="display:${t&&t.projectId?'block':'none'}"><label class="f">Project item</label><select id="${pfx}ProjectItem">${projectItemOptionsForLedger(t?t.projectId:'',t?t.projectItemId:'')}</select></div>
+      <div><label class="f">Vendor / payee</label><input type="text" id="${pfx}Sub" list="${pfx}SubList" value="${t? esc(t.sub||''):''}" placeholder="e.g. Massy Stores"><datalist id="${pfx}SubList">${subHints.map(s=>`<option value="${esc(s)}">`).join('')}</datalist></div>
+      <div style="grid-column:span 2;min-width:200px"><label class="f">Description</label><input type="text" id="${pfx}Desc" value="${t? esc(t.desc||''):''}" placeholder="what was this for?"></div>
+      ${fixedSrc? `<input type="hidden" id="${pfx}Src" value="${fixedSrc}">`:
+      `<div><label class="f">Source</label><select id="${pfx}Src">${Object.keys(SRC_META).map(s=>`<option value="${s}" ${s===src?'selected':''}>${SRC_META[s][0]} ${SRC_META[s][1]}</option>`).join('')}</select></div>`}
+    </div>
+    <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:8px">
+      <label class="checkline"><input type="checkbox" id="${pfx}Ded" ${t&&t.ded?'checked':''}> Tax-deductible</label>
+      <span class="grow"></span>
+      ${editing? `<button type="button" class="btn ghost" onclick="cancelEdit()">Cancel edit</button>
+                  <button type="submit" class="btn">💾 Update entry</button>`
+                : `<button type="submit" class="btn">➕ Add entry</button>`}
+    </div>
+  </form>`;
+}
+function updateSubHints(pfx){
+  const cat=$(pfx+'Cat').value;
+  const subs=[...new Set(state.tx.filter(x=>x.cat===cat).map(x=>x.sub).filter(Boolean))];
+  $(pfx+'SubList').innerHTML=subs.map(s=>`<option value="${esc(s)}">`).join('');
+  toggleIncomeType(pfx);
+}
+function toggleIncomeType(pfx){
+  const wrap=$(pfx+'IncomeTypeWrap'); if(!wrap) return;
+  const isIncome=$(pfx+'Cat')&&$(pfx+'Cat').value==='income';
+  wrap.style.display=isIncome?'block':'none';
+  const sel=$(pfx+'IncomeType');
+  if(isIncome&&sel&&!sel.value) sel.value='salary';
+}
+function saveEntry(pfx){
+  const cat=$(pfx+'Cat').value;
+  const data={ date:$(pfx+'Date').value, amt:parseAmt($(pfx+'Amt').value), cat,
+    sub:$(pfx+'Sub').value.trim(), desc:$(pfx+'Desc').value.trim(),
+    src:$(pfx+'Src')? $(pfx+'Src').value : 'manual', ded:$(pfx+'Ded').checked,
+    memberId:$(pfx+'Member')?.value||null,
+    projectId:cat==='income'?null:($(pfx+'Project')?.value||null),
+    projectItemId:cat==='income'?null:($(pfx+'ProjectItem')?.value||null) };
+  if(cat==='income') data.incomeType=$(pfx+'IncomeType')?.value||'salary';
+  if(!data.date || !data.amt || !data.cat){ toast('Date, amount and category are required'); return }
+  if(!CAT[data.cat]){ toast('If this is income, choose a category under “Income”'); return }
+  const editing = pfx==='led' && UI.editingId;
+  if(editing){ const t=state.tx.find(x=>x.id===UI.editingId); Object.assign(t,data); UI.editingId=null; toast('Entry updated') }
+  else { state.tx.push({id:uid(), ...data}); toast((data.cat==='income'?'Income':'Expense')+' added — '+fmt(data.amt)) }
+  store.save(); renderAll();
+}
+function cancelEdit(){ UI.editingId=null; renderLedger() }
+function editTx(id){ UI.editingId=id; showView('ledger'); renderLedger(); window.scrollTo({top:0,behavior:'smooth'}) }
+function delTx(id, btn){
+  if(!btn.dataset.armed){ btn.dataset.armed='1'; btn.textContent='Sure?'; btn.classList.add('confirm'); setTimeout(()=>{ if(btn.isConnected){btn.dataset.armed='';btn.textContent='✕';btn.classList.remove('confirm')} },2400); return }
+  state.tx=state.tx.filter(t=>t.id!==id);
+  if(UI.editingId===id) UI.editingId=null;
+  store.save(); renderAll(); toast('Entry deleted');
+}
+function ledgerRows(){
+  const f=UI.ledgerFilter;
+  let ts=[...state.tx];
+  if(f.cat!=='all') ts=ts.filter(t=>t.cat===f.cat);
+  if(f.src!=='all') ts=ts.filter(t=>t.src===f.src);
+  if(f.month!=='all'){ const p=f.month.split('-'); ts=ts.filter(t=>{ const q=txYM(t); return q.y===+p[0]&&q.m===+p[1] }) }
+  if(f.q){ const q=f.q.toLowerCase(); ts=ts.filter(t=>(t.desc+' '+t.sub+' '+catName(t.cat)+' '+(t.cat==='income'?incomeTypeLabel(t.incomeType||'other_income'):'')).toLowerCase().includes(q)) }
+  ts.sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:0);
+  return ts;
+}
+function renderLedger(){
+  const el=$('v-ledger');
+  const ts=ledgerRows(); const a=agg(ts);
+  el.innerHTML=`
+  <div class="card">
+    <h3>${UI.editingId?'✏️ Edit entry':'➕ New entry'} <span class="mut small" style="font-weight:400">— every field flows into the annual grid, budgets and income map</span></h3>
+    ${entryFormHTML('led')}
+  </div>
+  <div class="card">
+    <div class="cardhead">
+      <h3 style="margin:0">📒 Transaction register <span class="chip grey">${ts.length}</span></h3>
+      <span class="grow"></span>
+      <input type="text" placeholder="🔍 search description / vendor…" style="width:210px" value="${esc(UI.ledgerFilter.q)}" oninput="UI.ledgerFilter.q=this.value;refreshLedgerTable()">
+      <select style="width:auto" onchange="UI.ledgerFilter.month=this.value;refreshLedgerTable()">
+        <option value="all">All months</option>${monthOptions(UI.ledgerFilter.month)}</select>
+      <select style="width:auto" onchange="UI.ledgerFilter.cat=this.value;refreshLedgerTable()">
+        <option value="all">All categories</option>${catOptions(UI.ledgerFilter.cat==='all'?'':UI.ledgerFilter.cat,true)}</select>
+      <select style="width:auto" onchange="UI.ledgerFilter.src=this.value;refreshLedgerTable()">
+        <option value="all">All sources</option>
+        ${Object.keys(SRC_META).map(s=>`<option value="${s}" ${UI.ledgerFilter.src===s?'selected':''}>${SRC_META[s][0]} ${SRC_META[s][1]}</option>`).join('')}</select>
+      <button class="btn ghost small" onclick="exportCSV(true)">⬇️ CSV (filtered)</button>
+    </div>
+    <div class="scrollx"><table class="t" id="ledTable">${ledgerTableHTML(ts)}</table></div>
+    <div class="small mut" style="margin-top:8px">Showing ${ts.length} entries · income ${fmt0(a.inc)} · expenses ${fmt0(a.exp)} · net <b class="${a.inc-a.exp>=0?'pos':'neg'}">${fmt0(a.inc-a.exp)}</b></div>
+  </div>`;
+  const q=el.querySelector('input[type=text]');
+  if(q){ const keep=UI.ledgerFilter.q; q.addEventListener('focus',()=>{q.selectionStart=q.value.length}) }
+}
+function ledgerTableHTML(ts){
+  if(!ts.length) return `<tr><td colspan="7" class="mut" style="text-align:center;padding:26px">No entries match. Add one above or import from the <a href="#" onclick="showView('ingest');return false">Add Data</a> tab.</td></tr>`;
+  return `<thead><tr><th>Date</th><th>Category</th><th class="hide-m">Vendor</th><th>Description</th><th class="hide-m">Source</th><th class="num">Amount</th><th></th></tr></thead><tbody>`+
+    ts.map(t=>`<tr>
+      <td style="white-space:nowrap">${t.date}</td>
+      <td style="white-space:nowrap">${catIcon(t.cat)} ${esc(catName(t.cat))}${t.cat==='income'?` <span class="chip green" title="Income type">${esc(incomeTypeLabel(t.incomeType||'other_income'))}</span>`:''}${t.ded?' <span class="chip amber" title="Tax-deductible">D</span>':''}</td>
+      <td class="hide-m">${esc(t.sub||'')}</td>
+      <td>${esc(t.desc||'')}</td>
+      <td class="hide-m" title="${SRC_META[t.src]?SRC_META[t.src][1]:t.src}">${SRC_META[t.src]?SRC_META[t.src][0]:'📄'}</td>
+      <td class="num ${t.cat==='income'?'pos b':''}">${t.cat==='income'?'+':''}${fmt(t.amt)}</td>
+      <td style="white-space:nowrap">
+        <button class="btn ghost small" onclick="editTx('${t.id}')">✏️</button>
+        <button class="btn ghost small" onclick="delTx('${t.id}',this)">✕</button>
+      </td></tr>`).join('')+`</tbody>`;
+}
+function refreshLedgerTable(){ const el=$('ledTable'); if(el) el.innerHTML=ledgerTableHTML(ledgerRows());
+  const foot=$('ledFoot'); /* updated below if present */
+  renderLedgerFooter(); }
+function renderLedgerFooter(){ /* re-render summary line by re-running ledger stats */
+  const el=$('v-ledger'); if(!el) return; const line=el.querySelector('.small.mut:last-of-type');
+  const ts=ledgerRows(); const a=agg(ts);
+  const target=el.querySelectorAll('.card .small.mut'); const node=target[target.length-1];
+  if(node) node.innerHTML=`Showing ${ts.length} entries · income ${fmt0(a.inc)} · expenses ${fmt0(a.exp)} · net <b class="${a.inc-a.exp>=0?'pos':'neg'}">${fmt0(a.inc-a.exp)}</b>`;
+}
+
+/* ================================================================
+   VIEW: ANNUAL GRID  (the spreadsheet)
+   ================================================================ */
+function gridMatrix(y){
+  const txs=txForYear(y);
+  const monthsWith={}; for(const t of txs){ monthsWith[txYM(t).m]=1 }
+  const nMonths=Object.keys(monthsWith).length||12;
+  const incKeys=[...new Set(txs.filter(t=>t.cat==='income').map(t=>(t.incomeType||guessIncomeType((t.sub||'')+' '+(t.desc||'')))+'||'+(t.sub||'Income')))];
+  const incRows=incKeys.map(key=>{
+    const [incomeType,s]=key.split('||');
+    return {label:'💼 '+incomeTypeLabel(incomeType)+' — '+s, rows:null, incomeSub:s, incomeType,
+      vals:MONTHS.map((_,m)=>round2(txForMonth(y,m).filter(t=>t.cat==='income'&&(t.incomeType||guessIncomeType((t.sub||'')+' '+(t.desc||'')))===incomeType&&(t.sub||'Income')===s).reduce((a,t)=>a+t.amt,0)))};
+  });
+  const expGroups=['obligations','essentials','lifestyle','occasions','future'].map(g=>({
+    g, cats: CATS.filter(c=>c.grp===g).map(c=>({c, vals:MONTHS.map((_,m)=>round2(txForMonth(y,m).filter(t=>t.cat===c.id).reduce((a,t)=>a+t.amt,0)))}))
+  }));
+  return {y, incRows, expGroups, nMonths};
+}
+function renderGrid(){
+  const el=$('v-grid'); const y=UI.gridYear;
+  const M=gridMatrix(y);
+  const sum=vals=>round2(vals.reduce((a,b)=>a+b,0));
+  const avg=(vals,n)=>n? round2(sum(vals)/n):0;
+  const totExpAll=M.expGroups.reduce((a,g)=>a+g.cats.reduce((b,cr)=>b+sum(cr.vals),0),0);
+  /* month totals for income / expenses */
+  const mInc=MONTHS.map((_,m)=>txForMonth(y,m).filter(t=>t.cat==='income').reduce((a,t)=>a+t.amt,0));
+  const mExp=MONTHS.map((_,m)=>txForMonth(y,m).filter(t=>t.cat!=='income').reduce((a,t)=>a+t.amt,0));
+  const mNet=mInc.map((v,i)=>round2(v-mExp[i]));
+  const bud=cat=>+state.budgets[cat]||0;
+  const cell=(v,cat,m)=>{
+    if(!v) return '<td class="num"></td>';
+    const over= cat&&bud(cat)&&v>bud(cat);
+    return `<td class="num cellhit ${over?'over':''}" onclick="drill('${cat||''}',${m},${y})" title="See ${MONTHS[m]} entries">${fmt0(v)}</td>`;
+  };
+  const rowHTML=(label,vals,opts={})=>{
+    const t=sum(vals); const a=avg(vals,M.nMonths);
+    const budCell= opts.bud!==undefined? `<td class="inedit"><input type="number" step="10" min="0" value="${opts.bud||''}" placeholder="0" onchange="setBudget('${opts.cat}',this.value)"></td>`: '<td></td>';
+    const delta= opts.bud? (t-opts.bud*12): null;
+    const share= opts.shareOf? (t/totExpAll*100):null;
+    return `<tr class="${opts.cls||''}">
+      <td class="c0" ${opts.indent?'style="padding-left:22px"':''}>${label}</td>
+      ${vals.map((v,m)=>cell(v,opts.cat,m)).join('')}
+      <td class="num b">${t?fmt0(t):''}</td><td class="num">${t?fmt0(a):''}</td>${budCell}
+      <td class="num ${delta===null?'':delta>0?'over':delta<0?'under':''}">${delta===null?'':(delta>0?'+':'−')+fmt0(Math.abs(delta))}</td>
+      <td class="num mut">${share!=null&&t?share.toFixed(1)+'%':''}</td></tr>`;
+  };
+  const groupTotalRow=(label,vals,cls)=>`<tr class="${cls||'sub'}"><td class="c0">${label}</td>${vals.map((v,m)=>cell(v,null,m)).join('')}
+      <td class="num b">${fmt0(sum(vals))}</td><td class="num">${fmt0(avg(vals,M.nMonths))}</td><td></td><td></td><td></td></tr>`;
+  let body='';
+  /* income block */
+  body+=`<tr class="grp"><td class="c0">💰 INCOME</td>${'<td></td>'.repeat(12+5)}</tr>`;
+  for(const r of M.incRows) body+=rowHTML(r.label, r.vals, {});
+  body+=groupTotalRow('Total income', mInc,'sub');
+  /* expense groups */
+  for(const g of M.expGroups){
+    const gvals=MONTHS.map((_,m)=>g.cats.reduce((a,cr)=>a+cr.vals[m],0));
+    body+=`<tr class="grp"><td class="c0">${GROUPS[g.g].name.toUpperCase()}</td>${'<td></td>'.repeat(17)}</tr>`;
+    for(const cr of g.cats){
+      if(sum(cr.vals)===0 && !bud(cr.c.id)) continue;
+      body+=rowHTML(cr.c.icon+' '+cr.c.name, cr.vals, {cat:cr.c.id, bud:bud(cr.c.id), indent:true, shareOf:true});
+    }
+    body+=groupTotalRow(GROUPS[g.g].name+' subtotal', gvals, 'sub');
+  }
+  const expAll=MONTHS.map((_,m)=>mExp[m]);
+  body+=groupTotalRow('TOTAL EXPENSES', expAll,'tot');
+  body+=`<tr class="tot"><td class="c0">NET (income − expenses)</td>
+    ${mNet.map((v,m)=>`<td class="num ${v<0?'over':'under'}">${v?fmt0(v):''}</td>`).join('')}
+    <td class="num ${sum(mNet)<0?'over':'under'}">${fmt0(sum(mNet))}</td><td class="num">${fmt0(avg(mNet,M.nMonths))}</td><td></td><td></td><td></td></tr>`;
+  el.innerHTML=`
+  <div class="card">
+    <div class="cardhead">
+      <h3 style="margin:0">🗓️ Annual spreadsheet — full year by category</h3>
+      <span class="grow"></span>
+      <select style="width:auto" onchange="UI.gridYear=+this.value;renderGrid()">${yearOptions(y)}</select>
+      <button class="btn ghost small" onclick="exportGridCSV()">⬇️ Export grid CSV</button>
+    </div>
+    <p class="hint" style="margin:0 0 8px">Every cell is live — click a month cell to drill into its entries. “Δ vs budget” compares the year total with 12× your monthly budget (red = overspent). Edit the <b>Budget/mo</b> cells right in the grid.</p>
+    <div class="sheet-wrap"><table class="sheet">
+      <thead><tr>
+        <th class="c0">Category</th>${MONTHS.map(m=>`<th>${m}</th>`).join('')}<th>Year total</th><th>Avg/mo</th><th>Budget/mo</th><th>Δ vs budget</th><th>% spend</th>
+      </tr></thead><tbody>${body}</tbody></table></div>
+  </div>`;
+}
+function setBudget(cat, v){ if(!cat) return; const n=Math.max(0,parseAmt(v)); if(n) state.budgets[cat]=round2(n); else delete state.budgets[cat]; store.save(); toast('Budget for '+catName(cat)+' set to '+fmt0(n)+'/mo'); renderGrid(); renderBudgets(); renderDash(); }
+function drill(cat,m,y){ UI.ledgerFilter={cat:cat||'all', src:'all', q:'', month:y+'-'+m}; showView('ledger') }
+
+/* ================================================================
+   VIEW: BUDGETS
+   ================================================================ */
+function renderBudgets(){
+  const el=$('v-budgets'); const mk=UI.month, st=monthStats(mk.y,mk.m), t=t12();
+  const netRef=t.incAvg||state.streams.reduce((a,s)=>a+(+s.monthly||0),0);
+  const cards=['obligations','essentials','lifestyle','occasions','future'].map(g=>{
+    const rows=CATS.filter(c=>c.grp===g).map(c=>{
+      const bud=+state.budgets[c.id]||0, act=st.byCat[c.id]||0;
+      const pct=bud? Math.min(140,act/bud*100):0;
+      const over=bud&&act>bud;
+      const guide=c.guide? (netRef*c.guide/100):null;
+      return `<div class="bcard">
+        <div class="hd"><span>${c.icon}</span><b style="font-size:12.8px">${c.name}</b>
+          <span class="grow"></span>${over?`<span class="chip red">+${fmt0(act-bud)} over</span>`:bud?`<span class="chip green">under</span>`:`<span class="chip grey">no budget</span>`}</div>
+        <input type="number" min="0" step="10" value="${bud||''}" placeholder="monthly budget…" onchange="setBudget('${c.id}',this.value)">
+        <div class="bar" style="margin-top:8px"><i style="width:${bud?pct:0}%;background:${over?'#e05252':'#2f9e5f'}"></i></div>
+        <div class="row"><span class="mut">spent ${fmt0(act)}</span><span class="mut">${bud?fmt0(bud)+' budget':'—'}</span></div>
+        ${c.guide?`<div class="row"><span class="mut small">guideline ${c.guide}% of net ≈ ${fmt0(guide)}</span>
+          <button class="btn ghost small" title="Use guideline" onclick="setBudget('${c.id}',${Math.round(guide/10)*10})">use</button></div>`:''}
+      </div>`;}).join('');
+    return `<h3 style="margin:14px 0 8px;color:${GROUPS[g].color}">${GROUPS[g].name}</h3><div class="bcards">${rows}</div>`;
+  }).join('');
+  el.innerHTML=`
+  <div class="card">
+    <div class="cardhead">
+      <h3 style="margin:0">🎯 Budgets vs actuals</h3>
+      <select style="width:auto" onchange="UI.month=parseMK(this.value);renderBudgets();renderDash()">${monthOptions(mk.y+'-'+mk.m)}</select>
+      <span class="grow"></span>
+      <span class="chip ${st.over.length?'red':'green'}">${st.over.length? st.overspendTotal? fmt0(st.overspendTotal)+' over budget total':'over in '+st.over.length+' categories':'all within budget'}</span>
+      <button class="btn ghost small" onclick="applyGuidelineBudgets()">✨ Apply guideline budgets</button>
+      <button class="btn ghost small" onclick="clearBudgets()">Clear all</button>
+    </div>
+    <p class="hint" style="margin:0">Guidelines follow a 50/30/20-inspired split of your net income (currently ${fmt0(netRef)}/mo from your trailing-12 data). Budgets are monthly and apply to every month.</p>
+  </div>
+  ${cards}`;
+}
+function applyGuidelineBudgets(){
+  const netRef=t12().incAvg||state.streams.reduce((a,s)=>a+(+s.monthly||0),0);
+  if(netRef<=0){ toast('Add income first — guidelines are based on net income'); return }
+  let n=0; for(const c of EXPENSE_CATS){ if(c.guide){ state.budgets[c.id]=Math.round(netRef*c.guide/100/10)*10; n++ } }
+  store.save(); renderAll(); toast('Set '+n+' guideline budgets based on '+fmt0(netRef)+'/mo net income');
+}
+function clearBudgets(){ state.budgets={}; store.save(); renderAll(); toast('Budgets cleared') }
+
+/* ================================================================
+   VIEW: INCOME MAP  (where does income/revenue need to be)
+   ================================================================ */
+function renderIncome(){
+  const el=$('v-income'); const im=incomeMapNumbers(); const S=state.settings;
+  const streams=state.streams.map(s=>`<tr>
+    <td>${esc(s.label)}</td><td>${esc(incomeTypeBadge(s.incomeType||guessIncomeType(s.label)))}</td><td class="num">${fmt0(s.monthly)}</td><td class="num mut">${fmt0(s.monthly*12)}</td>
+    <td style="text-align:right"><button class="btn ghost small" onclick="delStream('${s.id}')">✕</button></td></tr>`).join('');
+  const incomeMix={};
+  for(const {y,m} of im.t.ms) for(const t of txForMonth(y,m)) if(t.cat==='income'){
+    const k=t.incomeType||guessIncomeType((t.sub||'')+' '+(t.desc||'')); incomeMix[k]=(incomeMix[k]||0)+t.amt;
+  }
+  const incomeMixRows=INCOME_TYPES.filter(x=>incomeMix[x.id]>0).sort((a,b)=>(incomeMix[b.id]||0)-(incomeMix[a.id]||0)).map(x=>{
+    const avg=(incomeMix[x.id]||0)/im.t.n; const share=im.t.incAvg?avg/im.t.incAvg*100:0;
+    return `<tr><td>${incomeTypeBadge(x.id)}</td><td>${esc(x.kind)}</td><td class="num">${fmt0(avg)}</td><td class="num">${share.toFixed(1)}%</td></tr>`;
+  }).join('')||'<tr><td colspan="4" class="mut">No recorded income events in the trailing 12 months.</td></tr>';
+  const incomeMixCard=`<div class="card"><h3>🧾 Recorded income mix — trailing 12 months</h3><p class="hint" style="margin-top:0">Income is still counted as cash inflow, but these types keep recurring pay, irregular payments, investment income, capital receipts, benefits and rent distinguishable.</p><table class="t"><thead><tr><th>Income type</th><th>Class</th><th class="num">Avg /mo</th><th class="num">Share</th></tr></thead><tbody>${incomeMixRows}</tbody></table></div>`;
+  /* survival = obligations + essentials */
+  const survivalM=['obligations','essentials'].reduce((a,g)=>a+CATS.filter(c=>c.grp===g).reduce((b,c)=>b+(im.t.byCatAvg[c.id]||0),0),0);
+  const ladder=[
+    {name:'🛟 Survival (essentials + obligations only)', net:survivalM},
+    {name:'🏠 Current lifestyle (everything recorded)', net:im.lifestyleM},
+    {name:`🐖 Lifestyle + ${S.savingsTargetPct}% savings goal`, net:im.lifestyleM+im.savingsGoalM},
+    {name:'😌 Comfort (+10% buffer)', net:(im.lifestyleM+im.savingsGoalM)*1.1}
+  ].map(r=>{ const gross=grossForNet(Math.max(1,r.net*12));
+    const ok=im.netMonthly>=r.net;
+    return `<tr class="ladder"><td>${r.name}</td>
+      <td class="num b">${fmt0(r.net)}/mo</td><td class="num mut">${fmt0(r.net*12)}/yr</td>
+      <td class="num b">${fmt0(gross/12)}/mo</td><td class="num mut">${fmt0(gross)}/yr</td>
+      <td style="text-align:center">${ok?'<span class="chip green">covered</span>':`<span class="chip red">short by ${fmt0(r.net-im.netMonthly)}/mo</span>`}</td></tr>` }).join('');
+  const maxG=im.grossComfort*1.35;
+  const marks=[
+    {gross:im.grossCurrent, color:'#3450b4', label:'you (≈'+fmtK(im.grossCurrent)+'/yr gross)'},
+    {gross:im.grossLifestyle, color:'#b45309', label:'break-even '+fmtK(im.grossLifestyle)},
+    {gross:im.grossWithSavings, color:'#15803d', label:'+savings '+fmtK(im.grossWithSavings)},
+    {gross:im.grossComfort, color:'#7c3aed', label:'comfort '+fmtK(im.grossComfort)}
+  ];
+  const eBiz=im.grossWithSavings/(S.businessMarginPct/100);
+  /* ---- minimum-wage lens ---- */
+  const mw=minWageNumbers();
+  const lensRows=[
+    ['🛟 Survival (essentials + obligations)', survivalM],
+    ['🏠 Current lifestyle', im.lifestyleM],
+    [`🐖 Lifestyle + ${S.savingsTargetPct}% savings goal`, im.lifestyleM+im.savingsGoalM],
+    ['😌 Comfort (+10% buffer)', (im.lifestyleM+im.savingsGoalM)*1.1]
+  ];
+  const catLens=Object.entries(im.t.byCatAvg).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]);
+  const lensCard = mw.netM>0? `
+  <div class="card">
+    <h3>📏 Minimum-wage lens — your costs as a share of a minimum-wage income</h3>
+    <p class="hint" style="margin-top:0">Full-time = 40 h/week ≈ 173⅓ h/month. At <b>${fmt(mw.hourly)}/hr</b> that is about <b>${fmt0(mw.grossM)}/mo gross</b> → <b>${fmt0(mw.netM)}/mo net</b> after your tax &amp; deduction settings (editable in the card above).</p>
+    <div class="kpis" style="margin-bottom:12px">
+      <div class="kpi"><div class="lbl">Minimum wage (net)</div><div class="v">${fmt0(mw.netM)}</div><div class="sub">per month, full-time</div></div>
+      <div class="kpi"><div class="lbl">Your lifestyle cost</div><div class="v">${(im.lifestyleM/mw.netM).toFixed(1)}×</div><div class="sub">${pctMinWage(im.lifestyleM).toFixed(0)}% of a minimum-wage income</div></div>
+      <div class="kpi"><div class="lbl">One min-wage job covers</div><div class="v">${im.lifestyleM>0?(mw.netM/im.lifestyleM*100).toFixed(0)+'%':'—'}</div><div class="sub">of your current lifestyle</div></div>
+      <div class="kpi"><div class="lbl">Min-wage hours/week</div><div class="v">${mw.hourly>0?Math.round(im.lifestyleM/(mw.hourly*4.333)):0}h</div><div class="sub">to fund your lifestyle entirely</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:22px">
+      <div>
+        <h3 style="font-size:13.5px">Needs ladder vs minimum wage</h3>
+        <table class="t ladder">
+          <thead><tr><th>Level</th><th class="num">/mo</th><th class="num">% of min wage</th><th class="num">Multiple</th></tr></thead>
+          <tbody>${lensRows.map(r=>{ const p=pctMinWage(r[1]);
+            return `<tr><td>${r[0]}</td><td class="num b">${fmt0(r[1])}</td>
+            <td class="num"><span class="bar" style="display:inline-block;width:64px;vertical-align:middle;margin-right:6px"><i style="width:${Math.min(100,p).toFixed(0)}%;background:#db2777"></i></span>${p.toFixed(0)}%</td>
+            <td class="num b">${(r[1]/mw.netM).toFixed(2)}×</td></tr>`}).join('')}</tbody>
+        </table>
+      </div>
+      <div>
+        <h3 style="font-size:13.5px">Each category as a share of a minimum-wage income</h3>
+        <table class="t">
+          <thead><tr><th>Category</th><th class="num">Avg /mo</th><th class="num">% of min wage</th></tr></thead>
+          <tbody>${catLens.map(e=>`<tr><td>${catIcon(e[0])} ${esc(catName(e[0]))}</td><td class="num">${fmt0(e[1])}</td><td class="num">${pctMinWage(e[1]).toFixed(1)}%</td></tr>`).join('')||'<tr><td colspan="3" class="mut">No expense data yet.</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>
+  </div>`:'';
+  el.innerHTML=`
+  <div class="grid2">
+    <div class="card">
+      <h3>💵 Income streams</h3>
+      <table class="t"><thead><tr><th>Stream (net take-home)</th><th>Type</th><th class="num">Monthly</th><th class="num">Annual</th><th></th></tr></thead>
+      <tbody>${streams||'<tr><td colspan="5" class="mut">No streams yet</td></tr>'}</tbody></table>
+      <div class="frow" style="margin-top:10px">
+        <div><label class="f">New stream name</label><input type="text" id="streamLabel" placeholder="e.g. Salary (net)"></div>
+        <div><label class="f">Income type</label><select id="streamType">${incomeTypeOptions('salary',true)}</select></div>
+        <div><label class="f">Monthly net (${esc(SYM())})</label><input type="number" id="streamAmt" step="10" min="0" placeholder="0"></div>
+        <div style="align-self:end"><button class="btn" onclick="addStream()">➕ Add stream</button></div>
+      </div>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn ghost small" onclick="postStreams()">📋 Post this month's income to the ledger</button>
+        <span class="hint" style="align-self:center">Streams drive the map; posted entries drive the actuals.</span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>⚙️ Tax & deduction assumptions <span class="mut small" style="font-weight:400">(editable estimates)</span></h3>
+      <div class="frow">
+        <div><label class="f">Annual tax-free allowance</label><input type="number" step="500" min="0" value="${S.taxAllowance}" onchange="setSetting('taxAllowance',this.value)"></div>
+        <div><label class="f">PAYE rate % (up to 1M)</label><input type="number" step="0.5" min="0" max="60" value="${S.taxRate}" onchange="setSetting('taxRate',this.value)"></div>
+        <div><label class="f">Employee NIS %</label><input type="number" step="0.1" min="0" max="15" value="${S.nisPct}" onchange="setSetting('nisPct',this.value)"></div>
+        <div><label class="f">NIS insurable ceiling /mo</label><input type="number" step="100" min="0" value="${S.nisCeilingMonthly}" onchange="setSetting('nisCeilingMonthly',this.value)"></div>
+      </div>
+      <div class="frow">
+        <div><label class="f">Health surcharge /week (flat)</label><input type="number" step="0.05" min="0" value="${S.healthSurchargeWeekly}" onchange="setSetting('healthSurchargeWeekly',this.value)"></div>
+        <div><label class="f">Other deductions % (pension etc.)</label><input type="number" step="0.1" min="0" max="30" value="${S.payrollDeductionPct}" onchange="setSetting('payrollDeductionPct',this.value)"></div>
+        <div><label class="f">Savings target % of net</label><input type="number" step="1" min="0" max="60" value="${S.savingsTargetPct}" onchange="setSetting('savingsTargetPct',this.value)"></div>
+        <div><label class="f">Emergency fund (months)</label><input type="number" step="1" min="1" max="12" value="${S.emergencyMonths}" onchange="setSetting('emergencyMonths',this.value)"></div>
+      </div>
+      <div class="frow">
+        <div><label class="f">Business margin % (self-employed)</label><input type="number" step="1" min="1" max="99" value="${S.businessMarginPct}" onchange="setSetting('businessMarginPct',this.value)"></div>
+        <div><label class="f">Minimum wage / hour</label><input type="number" step="0.25" min="0" value="${S.minWageHourly}" onchange="setSetting('minWageHourly',this.value)"></div>
+      </div>
+      <p class="hint">Defaults follow Trinidad &amp; Tobago (2026): TT$90,000 personal allowance · 25% PAYE on chargeable income up to TT$1M (30% above) · employee NIS 5.4% on insurable earnings capped at TT$13,600/mo · health surcharge is a flat TT$8.25/wk above TT$469.99/mo earnings (TT$4.80/wk below) · 70% of employee NIS is deductible before PAYE · TT$20.50/hr minimum wage. Adjust to your payslip or country.</p>
+    </div>
+  </div>
+  ${incomeMixCard}
+  <div class="card">
+    <h3>🧭 The cost-of-living equation — where your income needs to be</h3>
+    <div class="formgrid" style="background:#f6f8fd;border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:12px;font-size:13.5px">
+      <div>Monthly lifestyle cost <b>${fmt0(im.lifestyleM)}</b><br><span class="mut small">incl. ${fmt0(im.savingsAllocM)}/mo savings allocations; core spend ${fmt0(im.coreLifestyleM)}</span></div>
+      <div>＋ Savings goal (${S.savingsTargetPct}% of net) <b>${fmt0(im.savingsGoalM)}</b></div>
+      <div>＝ Required take-home <b>${fmt0(im.lifestyleM+im.savingsGoalM)}/mo</b></div>
+      <div>÷ (1 − effective tax &amp; deductions ${etr(im.grossWithSavings).toFixed(1)}%)</div>
+      <div>＝ Required <b class="pos">gross ${fmt0(im.grossWithSavings/12)}/mo</b><br><span class="mut small">${fmt0(im.grossWithSavings)}/yr salary</span></div>
+    </div>
+    <table class="t ladder">
+      <thead><tr><th>Level</th><th class="num">Take-home needed /mo</th><th class="num">/yr</th><th class="num">Gross salary needed /mo</th><th class="num">/yr</th><th>Status vs your ${fmt0(im.netMonthly)}/mo</th></tr></thead>
+      <tbody>${ladder}</tbody></table>
+    <p class="hint" style="margin-top:8px">Tax inversion solves gross ↔ net exactly (binary search on the allowance + rate you set). “Survival” counts your obligations &amp; essentials only.</p>
+  </div>
+  ${lensCard}
+  <div class="grid2">
+    <div class="card">
+      <h3>📈 Net pay vs your lifestyle need</h3>
+      ${lineNetSVG(maxG, netFromGross, im.needWithSavings, marks)}
+      <p class="hint">Blue curve = take-home pay after PAYE &amp; payroll deductions. Dashed amber = what your current lifestyle plus the savings goal actually costs per year. Where the curve crosses the line is the gross salary you need.</p>
+    </div>
+    <div class="card">
+      <h3>🚀 Self-employed / side-hustle revenue view</h3>
+      <table class="t">
+        <tr><td>To fund your current lifestyle</td><td class="num b">${fmt0(im.grossLifestyle/12)}/mo gross income</td></tr>
+        <tr><td>At a ${S.businessMarginPct}% margin that needs revenue of</td><td class="num b">${fmt0(im.grossLifestyle/12/(S.businessMarginPct/100))}/mo</td></tr>
+        <tr><td>Lifestyle + savings goal → gross</td><td class="num b">${fmt0(im.grossWithSavings/12)}/mo</td></tr>
+        <tr><td>…needs revenue at ${S.businessMarginPct}% margin</td><td class="num b pos">${fmt0(eBiz/12)}/mo</td></tr>
+        <tr><td>…per year</td><td class="num b pos">${fmt0(eBiz)}</td></tr>
+      </table>
+      <p class="hint" style="margin-top:8px">Revenue needed = required gross income ÷ margin. Set your real margin above (a typical service business runs 25–45%).</p>
+      ${im.gapMonthly<0?
+        `<div style="margin-top:10px"><span class="chip red">You're running ${fmt0(-im.gapMonthly)}/mo behind your lifestyle</span> <a href="#" onclick="showView('plan');return false">See saving strategies →</a></div>`:
+        `<div style="margin-top:10px"><span class="chip green">You clear ${fmt0(im.gapMonthly)}/mo above your lifestyle</span> <a href="#" onclick="showView('plan');return false">See investment options →</a></div>`}
+    </div>
+  </div>`;
+}
+function addStream(){
+  const l=$('streamLabel').value.trim(), a=parseAmt($('streamAmt').value);
+  const incomeType=$('streamType')?.value||'salary';
+  if(!l||!a){ toast('Give the stream a name and a monthly amount'); return }
+  state.streams.push({id:uid(), label:l, monthly:round2(a), incomeType}); store.save(); renderAll(); toast('Income stream added');
+}
+function delStream(id){ state.streams=state.streams.filter(s=>s.id!==id); store.save(); renderAll(); toast('Stream removed') }
+function postStreams(){
+  const mk=UI.month; let added=0, skipped=0;
+  for(const s of state.streams){
+    /* duplicate check keyed on stream id, so renaming a stream can't create a duplicate
+       (label fallback covers entries posted before v1.2) */
+    const exists=state.tx.some(t=>t.cat==='income'&&txYM(t).y===mk.y&&txYM(t).m===mk.m&&(t.streamId? t.streamId===s.id : t.sub===s.label));
+    if(exists){ skipped++; continue }
+    state.tx.push({id:uid(), date:mk.y+'-'+String(mk.m+1).padStart(2,'0')+'-01', cat:'income', sub:s.label, desc:'Posted from income stream', amt:s.monthly, src:'manual', ded:false, streamId:s.id, memberId:s.memberId||null, incomeType:s.incomeType||guessIncomeType(s.label)}); added++;
+  }
+  store.save(); renderAll(); toast(added+' income entries posted'+(skipped?' ('+skipped+' already posted)':''));
+}
+function setSetting(k,v){ state.settings[k]=parseAmt(v)||0; store.save(); renderIncome(); renderDash(); renderPlan(); }
+
+/* ================================================================
+   VIEW: PLAN & ADVICE  (surplus → investments · deficit → strategies)
+   ================================================================ */
+const RISK_PROFILES={
+  conservative:{name:'Conservative', rows:[['Emergency / money-market fund',40],['T-bills & fixed deposits',35],['Retirement annuity (tax-advantaged)',15],['Dividend & balanced funds',10]]},
+  balanced:{name:'Balanced', rows:[['Emergency / money-market fund',20],['T-bills & fixed deposits',25],['Retirement annuity (tax-advantaged)',15],['Diversified equity funds / ETFs',30],['REITs / income property exposure',10]]},
+  growth:{name:'Growth', rows:[['Emergency / money-market fund',10],['T-bills & fixed deposits',10],['Retirement annuity (tax-advantaged)',15],['Diversified equity funds / ETFs',45],['REITs / alternatives',20]]}
+};
+function updCutLbl(c){
+  const t=t12();
+  const l1=document.getElementById('cutLbl_'+c), l2=document.getElementById('cutSv_'+c);
+  if(l1) l1.textContent=UI.cuts[c]||0;
+  if(l2) l2.textContent=fmt0((t.byCatAvg[c]||0)*(UI.cuts[c]||0)/100);
+}
+function renderPlan(){
+  const el=$('v-plan'); const t=t12(); const im=incomeMapNumbers(); const S=state.settings;
+  const mw=minWageNumbers();
+  const stress=UI.stressPct;
+  const cutCats=Object.keys(t.byCatAvg).filter(c=>c!=='savings'&&c!=='income').sort((a,b)=>t.byCatAvg[b]-t.byCatAvg[a]).slice(0,6);
+  const cutSavings=cutCats.reduce((a,c)=>a+(t.byCatAvg[c]*(UI.cuts[c]||0)/100),0);
+  const effExp=t.expAvg*(1+stress/100)-cutSavings;
+  const effNet=t.incAvg-effExp;
+  const savingsAlloc=t.byCatAvg.savings||0;
+  const surplusCard=effNet>=0;
+  /* investments */
+  const contrib=(UI.invContrib==null? Math.max(0,effNet): UI.invContrib);
+  const g=growthSVG(contrib, UI.invReturn, UI.invYears, 0);
+  const profile=RISK_PROFILES[UI.riskProfile||'balanced'];
+  const emergFund=S.emergencyMonths*effExp;
+  /* deficit table: excess over guideline */
+  const netRef=t.incAvg||state.streams.reduce((a,s)=>a+(+s.monthly||0),0);
+  const excess=EXPENSE_CATS.filter(c=>c.guide&&t.byCatAvg[c.id]>netRef*c.guide/100 && c.id!=='loans')
+    .map(c=>({c, spend:t.byCatAvg[c.id], guide:netRef*c.guide/100, excess:t.byCatAvg[c.id]-netRef*c.guide/100}))
+    .sort((a,b)=>b.excess-a.excess);
+  const stratLines=excess.slice(0,4).map(x=>
+    `• <b>${x.c.name}</b> runs ${fmt0(x.spend)}/mo — ${(x.spend/netRef*100).toFixed(1)}% of net income vs a ${x.c.guide}% guideline. Bringing it to the guideline frees <b>${fmt0(x.excess)}/mo (${fmt0(x.excess*12)}/yr)</b>.`).join('<br>');
+  const quickWins=[
+    'Audit subscriptions: cancel anything unused for 60+ days — usually 1–3% of net recovered.',
+    'Meal-prep 2 extra days a week; restaurant spend typically drops 20–30%.',
+    'Bundle motor + home insurance and re-quote annually — 10–15% savings are common.',
+    'Ask your lender about refinancing/shortening loans — even 0.5% matters over years.',
+    'Shift grocery runs to bulk/wholesale cycles and plan around sales.',
+    'If the gap persists, treat it as an income problem: the Income Map shows the revenue target.'
+  ];
+  el.innerHTML=`
+  <div class="card">
+    <div class="cardhead"><h3 style="margin:0">💡 Where you stand</h3><span class="grow"></span>
+      <span class="chip ${surplusCard?'green':'red'}">${surplusCard? 'Surplus':'Deficit'}</span></div>
+    <div class="kpis" style="margin-bottom:10px">
+      <div class="kpi"><div class="lbl">Take-home (avg)</div><div class="v">${fmt0(t.incAvg)}</div><div class="sub">per month</div></div>
+      <div class="kpi"><div class="lbl">Lifestyle cost (avg)</div><div class="v">${fmt0(t.expAvg)}</div><div class="sub">incl. ${fmt0(savingsAlloc)} savings</div></div>
+      <div class="kpi"><div class="lbl">Monthly ${surplusCard?'surplus':'deficit'}</div><div class="v ${surplusCard?'pos':'neg'}">${fmt0(Math.abs(effNet))}</div><div class="sub">${fmt0(effNet*12)}/yr</div></div>
+      <div class="kpi"><div class="lbl">Savings rate</div><div class="v">${t.incAvg?((savingsAlloc+Math.max(0,effNet))/t.incAvg*100).toFixed(1):'—'}%</div><div class="sub">allocations + unspent</div></div>
+    </div>
+    ${mw.netM>0? `<p class="hint" style="margin:0 0 10px">📏 Reference: a full-time minimum-wage job nets ≈ <b>${fmt0(mw.netM)}/mo</b> — your monthly position of ${fmt0(effNet)} equals about <b>${Math.round(Math.abs(effNet)/(mw.hourly*4.333))} hours/week</b> of minimum-wage work.</p>`:''}
+    <div class="frow">
+      <div><label class="f">Cost-of-living stress test: <span id="stressLbl">+${stress}%</span> <span class="mut" id="stressSub">${stress? 'adds '+fmt0(t.expAvg*stress/100)+'/mo':''}</span></label>
+        <input type="range" min="0" max="30" step="1" value="${stress}" style="width:100%"
+          oninput="UI.stressPct=+this.value;document.getElementById('stressLbl').textContent='+'+this.value+'%'"
+          onchange="renderPlan()"></div>
+      <div><label class="f">What-if cuts</label>
+        <div class="small mut">Trim categories below — the position updates when you release the slider${cutSavings?` · cutting <b class="pos">${fmt0(cutSavings)}/mo</b>`:''}</div></div>
+    </div>
+    <div class="formgrid">
+      ${cutCats.map(c=>`<div><label class="f">${catIcon(c)} ${catName(c)} −<span id="cutLbl_${c}">${UI.cuts[c]||0}</span>% <span class="mut">saves <span id="cutSv_${c}">${fmt0(t.byCatAvg[c]*(UI.cuts[c]||0)/100)}</span>/mo</span></label>
+        <input type="range" min="0" max="30" step="5" value="${UI.cuts[c]||0}" style="width:100%"
+          oninput="UI.cuts['${c}']=+this.value;updCutLbl('${c}')"
+          onchange="renderPlan()"></div>`).join('')}
+    </div>
+  </div>
+  <details class="sec" ${surplusCard?'open':''}>
+    <summary>📈 Surplus playbook — investing spare cash (${fmt0(Math.max(0,effNet))}/mo available)</summary>
+    <div class="inner">
+      <div class="formgrid" style="margin-bottom:12px">
+        <div><label class="f">Monthly contribution</label><input type="number" min="0" step="10" value="${contrib||''}" placeholder="0" onchange="UI.invContrib=parseAmt(this.value);renderPlan()"></div>
+        <div><label class="f">Expected annual return %</label><select onchange="UI.invReturn=+this.value;renderPlan()">
+          ${[3,4,5,6,7,8,10,12].map(r=>`<option value="${r}" ${r===UI.invReturn?'selected':''}>${r}%</option>`).join('')}</select></div>
+        <div><label class="f">Horizon: <span id="invYearsLbl">${UI.invYears}</span> years</label><input type="range" min="1" max="30" value="${UI.invYears}" style="width:100%" oninput="UI.invYears=+this.value;document.getElementById('invYearsLbl').textContent=this.value" onchange="renderPlan()"></div>
+        <div><label class="f">Risk profile</label><select onchange="UI.riskProfile=this.value;renderPlan()">
+          ${Object.entries(RISK_PROFILES).map(([k,p])=>`<option value="${k}" ${k===(UI.riskProfile||'balanced')?'selected':''}>${p.name}</option>`).join('')}</select></div>
+      </div>
+      <div class="kpis" style="margin-bottom:10px">
+        <div class="kpi"><div class="lbl">Invested to</div><div class="v">${fmt0(g.contributed)}</div><div class="sub">over ${UI.invYears} yrs at ${contrib}/mo</div></div>
+        <div class="kpi"><div class="lbl">Projected value</div><div class="v pos">${fmt0(g.fv)}</div><div class="sub">at ${UI.invReturn}%/yr compounded monthly</div></div>
+        <div class="kpi"><div class="lbl">Growth earned</div><div class="v">${fmt0(g.fv-g.contributed)}</div><div class="sub">compounding doing the work</div></div>
+        <div class="kpi"><div class="lbl">Emergency fund first</div><div class="v">${fmt0(emergFund)}</div><div class="sub">${S.emergencyMonths} months × ${fmt0(effExp)}</div></div>
+      </div>
+      ${g.svg}
+      <h3 style="margin-top:12px">${profile.name} allocation (educational example)</h3>
+      <table class="t">${profile.rows.map(r=>`<tr><td>${r[0]}</td><td class="num b">${r[1]}%</td><td class="num mut">${fmt0(contrib*r[1]/100)}/mo</td></tr>`).join('')}</table>
+      <p class="hint" style="margin-top:8px">⚠️ Educational illustration only — not financial advice. Verify any product with a licensed advisor and your local regulator (e.g. TTSEC in Trinidad &amp; Tobago), and check fees, lock-ins and deposit insurance.</p>
+    </div>
+  </details>
+  <details class="sec" ${!surplusCard?'open':''}>
+    <summary>🛟 Deficit playbook — saving strategies (${!surplusCard? fmt0(-effNet)+'\/mo to close':'currently in surplus — bookmark this for hard months'})</summary>
+    <div class="inner">
+      ${excess.length? `<table class="t">
+        <thead><tr><th>Category</th><th class="num">You spend</th><th class="num">Guideline</th><th class="num">Over guideline</th><th class="num">Cut to guideline saves</th><th></th></tr></thead>
+        <tbody>${excess.map(x=>`<tr><td>${x.c.icon} ${x.c.name}</td><td class="num">${fmt0(x.spend)}</td><td class="num mut">${fmt0(x.guide)} (${x.c.guide}%)</td>
+          <td class="num neg b">${fmt0(x.excess)}</td><td class="num pos b">${fmt0(x.excess*12)}/yr</td>
+          <td><button class="btn ghost small" onclick="setBudget('${x.c.id}',${Math.round(x.guide/10)*10})">set as budget</button></td></tr>`).join('')}</tbody></table>
+        <div style="margin-top:10px">${stratLines}</div>`:
+        '<p class="mut">No category is dramatically above guideline — your deficit (if any) is structural: income vs fixed obligations. Focus on the Income Map revenue target and refinancing fixed costs.</p>'}
+      <h3 style="margin-top:14px">Quick wins, biggest-impact first</h3>
+      <div class="small" style="line-height:1.9">${quickWins.map(q=>'• '+q).join('<br>')}</div>
+      <p class="hint" style="margin-top:8px">⚠️ Educational guidance only — not financial advice.</p>
+    </div>
+  </details>`;
+}
+
+/* ================================================================
+   VIEW: ADD DATA  (manual · invoice scan · email/text · CSV)
+   ================================================================ */
+function renderIngest(){
+  const el=$('v-ingest');
+  const dzContent= UI.ocrURL
+    ? `<img src="${UI.ocrURL}" alt="preview">`
+    : `📄 <b>Drop an invoice, receipt or screenshot here</b> — or click to browse<br><span class="small mut">images stay on your device; nothing is uploaded</span>`;
+  el.innerHTML=`
+  <div class="grid2">
+    <div class="card">
+      <h3>✍️ Manual entry</h3>
+      ${entryFormHTML('man','manual')}
+    </div>
+    <div class="card">
+      <h3>🧾 Scan invoice / receipt / screenshot</h3>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+        <label class="checkline"><input type="checkbox" id="ocrOn" ${UI.ocrOn?'checked':''} onchange="UI.ocrOn=this.checked"> Try OCR (needs internet)</label>
+        <select id="imgSrcSel" style="width:auto" onchange="UI.imgSrc=this.value;renderIngest()">
+          <option value="invoice" ${UI.imgSrc==='invoice'?'selected':''}>Source: Invoice scan</option>
+          <option value="screenshot" ${UI.imgSrc==='screenshot'?'selected':''}>Source: Screenshot</option>
+        </select>
+        <button class="btn small" onclick="runOCR()">🔍 Scan image</button>
+      </div>
+      <div class="dropzone" onclick="document.getElementById('imgIn').click()"
+           ondragover="event.preventDefault();this.classList.add('hover')"
+           ondragleave="this.classList.remove('hover')"
+           ondrop="event.preventDefault();this.classList.remove('hover');handleImgFile(event.dataTransfer.files[0])">${dzContent}</div>
+      <input type="file" id="imgIn" accept="image/*" style="display:none" onchange="handleImgFile(this.files[0])">
+      <div class="status" id="ocrStatus">${UI.ocrMsg||''}</div>
+      <hr style="border:0;border-top:1px solid var(--line);margin:12px 0">
+      <h3 style="font-size:13.5px">Quick-entry from this image</h3>
+      ${entryFormHTML('img', UI.imgSrc||'invoice')}
+    </div>
+  </div>
+  ${UI.candidates.length? `
+  <div class="card">
+    <div class="cardhead"><h3 style="margin:0">🔍 Parsed entries — review &amp; import <span class="chip grey">${UI.candidates.length}</span></h3>
+      <span class="grow"></span><button class="btn small" onclick="importCandidates()">➕ Import checked</button>
+      <button class="btn ghost small" onclick="UI.candidates=[];renderIngest()">Discard</button></div>
+    <div class="scrollx"><table class="t"><thead><tr><th></th><th>Date</th><th>Vendor</th><th>Detail</th><th>Category</th><th class="num">Amount</th><th>Confidence</th></tr></thead>
+    <tbody>${UI.candidates.map((c,i)=>`
+      <tr><td><input type="checkbox" id="ck${i}" checked></td>
+        <td><input type="date" id="cd${i}" value="${c.date}" style="width:132px"></td>
+        <td><input type="text" id="cv${i}" value="${esc(c.vendor)}" style="width:130px"></td>
+        <td><input type="text" id="cx${i}" value="${esc(c.desc)}" style="width:170px"></td>
+        <td><select id="cc${i}" style="width:190px">${catOptions(c.cat,false)}</select></td>
+        <td><input type="number" id="ca${i}" step="0.01" value="${c.amount}" style="width:100px"></td>
+        <td>${c.conf==='high'?'<span class="chip green">high</span>':'<span class="chip amber">verify</span>'}</td></tr>`).join('')}
+    </tbody></table></div>
+    <p class="hint">“Verify” rows were guessed from keywords — amounts and categories are editable before import.</p>
+  </div>`:''}
+  <div class="card">
+    <h3>📧 From email or pasted text</h3>
+    <p class="hint" style="margin-top:0">Paste a receipt/order/bank email (or upload an .eml/.txt file). Amounts, dates, vendors and categories are detected automatically.</p>
+    <textarea id="emailText" rows="7" placeholder="Paste email or statement text here… e.g.&#10;From: billing@massystores.com&#10;Date: 12/03/2026&#10;Your order total: TT$ 486.20" oninput="UI.emailText=this.value">${esc(UI.emailText||'')}</textarea>
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+      <button class="btn" onclick="parseEmailText()">🔍 Parse text</button>
+      <button class="btn ghost" onclick="document.getElementById('emlIn').click()">📂 Upload .eml / .txt</button>
+      <input type="file" id="emlIn" accept=".eml,.txt,text/plain,message/rfc822" style="display:none" onchange="readEmlFile(this)">
+    </div>
+    <div class="status" id="parseStatus">${UI.parseMsg||''}</div>
+  </div>
+  <div class="card">
+    <h3>📄 CSV import</h3>
+    <p class="hint" style="margin-top:0">Columns recognized: <b>date, description, category, vendor, amount</b> (any order, extra columns ignored). Amounts can include currency symbols.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn" onclick="document.getElementById('csvIn').click()">📂 Choose CSV file</button>
+      <button class="btn ghost" onclick="downloadTemplate()">⬇️ Download template</button>
+      <input type="file" id="csvIn" accept=".csv,text/csv" style="display:none" onchange="handleCSVFile(this)">
+    </div>
+    <div class="status" id="csvStatus">${UI.csvMsg||''}</div>
+    ${UI.csvCands&&UI.csvCands.length? `
+      <div class="scrollx" style="margin-top:8px"><table class="t"><thead><tr><th>Date</th><th>Vendor</th><th>Description</th><th>Category</th><th class="num">Amount</th></tr></thead>
+      <tbody>${UI.csvCands.slice(0,10).map(c=>`<tr><td>${c.date}</td><td>${esc(c.vendor)}</td><td>${esc(c.desc)}</td><td>${catIcon(c.cat)} ${esc(catName(c.cat))}</td><td class="num">${fmt(c.amount)}</td></tr>`).join('')}</tbody></table></div>
+      <p class="hint">${UI.csvCands.length>10?('…and '+(UI.csvCands.length-10)+' more. '):''}Categories were auto-assigned where possible.</p>
+      <button class="btn" onclick="importCSV()">➕ Import ${UI.csvCands.length} rows</button>`:''}
+  </div>`;
+}
+/* ---- image flow ---- */
+function handleImgFile(f){
+  if(!f) return;
+  if(!/^image\//.test(f.type)){ toast('Please choose an image file (JPG/PNG)'); return }
+  if(UI.ocrURL) URL.revokeObjectURL(UI.ocrURL);
+  UI.ocrFile=f; UI.ocrURL=URL.createObjectURL(f); UI.ocrMsg='';
+  renderIngest();
+  if(UI.ocrOn) runOCR();
+}
+let tessPromise=null;
+function loadTesseract(){
+  if(window.Tesseract) return Promise.resolve();
+  if(!tessPromise) tessPromise=new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';   /* pinned — major-only floats can break silently */
+    s.onload=()=>res(); s.onerror=()=>{ tessPromise=null; rej(new Error('offline')) };
+    document.head.appendChild(s);
+  });
+  return tessPromise;
+}
+async function runOCR(){
+  if(!UI.ocrFile){ toast('Choose an invoice or screenshot image first'); return }
+  if(!UI.ocrOn){ UI.ocrMsg='Tick “Try OCR” first (it needs internet).'; renderIngest(); return }
+  UI.ocrMsg='⏳ Loading OCR engine (first use downloads ~2 MB)…'; renderIngest();
+  try{
+    await loadTesseract();
+    UI.ocrMsg='⏳ Reading image…'; renderIngest();
+    const res=await window.Tesseract.recognize(UI.ocrFile,'eng');
+    const text=(res.data&&res.data.text)||'';
+    const cands=parseText(text, UI.imgSrc||'invoice');
+    UI.ocrMsg = cands.length? 'OCR finished — review the parsed entries below.':'OCR finished but no amounts were found — use the quick-entry form beside the image.';
+    UI.candidates=cands;
+  }catch(e){
+    UI.ocrMsg='⚠️ OCR unavailable here (offline or blocked). The image preview stays above — type the details into the quick-entry form. When this file is opened in a normal browser with internet, OCR will work.';
+  }
+  renderIngest();
+}
+/* ---- email / text parsing ---- */
+function readEmlFile(input){
+  const f=input.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ UI.emailText=String(r.result||''); renderIngest(); parseEmailText() };
+  r.readAsText(f);
+}
+function parseEmailText(){
+  const txt=(UI.emailText||'').trim();
+  if(!txt){ UI.parseMsg='Paste some text first.'; renderIngest(); return }
+  const cands=parseText(txt,'email');
+  UI.candidates=cands;
+  UI.parseMsg = cands.length? ('Found '+cands.length+' candidate '+(cands.length===1?'entry':'entries')+' — review them in the table above.')
+    : 'No amounts detected. Tip: include lines like “Total TT$ 123.45”.';
+  renderIngest();
+  if(cands.length){ const tbl=document.querySelector('#v-ingest .card .scrollx'); if(tbl) tbl.scrollIntoView({behavior:'smooth',block:'center'}) }
+}
+/* ---- the heuristic parser (works on OCR text, emails, statements) ---- */
+function mkISO(y,m,d){ m=Math.min(12,Math.max(1,m)); d=Math.min(31,Math.max(1,d));
+  return y+'-'+String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0') }
+function extractDate(s){
+  s=String(s||'');
+  let m=s.match(/(20\d{2})-(\d{1,2})-(\d{1,2})/); if(m) return mkISO(+m[1],+m[2],+m[3]);
+  m=s.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](20\d{2})/); if(m) return mkISO(+m[3],+m[2],+m[1]); /* d/m/yyyy */
+  const MO='jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec';
+  m=s.match(new RegExp('(\\d{1,2})\\s+('+MO+')[a-z]*\\s*,?\\s*(20\\d{2})','i')); if(m) return mkISO(+m[3], 1+MO.split('|').indexOf(m[2].toLowerCase()), +m[1]);
+  m=s.match(new RegExp('('+MO+')[a-z]*\\.?\\s+(\\d{1,2}),?\\s*(20\\d{2})','i')); if(m) return mkISO(+m[3], 1+MO.split('|').indexOf(m[1].toLowerCase()), +m[2]);
+  return null;
+}
+function guessVendorLine(l){
+  for(const words of Object.values(VENDOR_HINTS)){ for(const w of words){ if(l.toLowerCase().includes(w)) return w.replace(/\b\w/g,c=>c.toUpperCase()) } }
+  const cleaned=l.replace(/[\d,.$€£]/g,' ').replace(/\s+/g,' ').trim();
+  const words=cleaned.split(' ').filter(w=>w.length>2).slice(0,3);
+  return words.length? words.map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' '): '';
+}
+function parseText(raw, src){
+  const lines=String(raw||'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  const fromM=String(raw).match(/^From:\s*(.+)$/mi); const fromVendor=fromM? vendorFromEmail(fromM[1]):null;
+  const subjM=String(raw).match(/^Subject:\s*(.+)$/mi);
+  const cands=[], seen={};
+  for(const l of lines){
+    if(/^(from|to|cc|bcc|subject|date|sent|reply|return-path|delivered-to|received|content-type|mime|dkim|spf|authentication-results|x-|>--|^--$|={3,}|#{3,}|\*{3,})/i.test(l) && !/total|amount|due|paid|balance|charged/i.test(l)) continue;
+    const amts=[...l.matchAll(/(?:tt\$|ttd|us\$|usd|\$|€|£|rs\.?)?\s*([\d,]+\.\d{2})\b/gi)].map(m=>+m[1].replace(/,/g,''));
+    if(!amts.length) continue;
+    const isTotal=/(grand total|total due|amount due|balance due|amount payable|total paid|pay this amount|invoice total|order total|total:)/i.test(l);
+    const amt=isTotal? Math.max(...amts): amts[amts.length-1];
+    const key=l.toLowerCase().replace(/[^a-z0-9.]/g,'');
+    if(seen[key]) continue; seen[key]=1;
+    const vendor=fromVendor||guessVendorLine(l)||'';
+    const combined=l+' '+vendor+' '+(subjM?subjM[1]:'');
+    const cat=guessCat(combined)||'other';
+    const incomeType=cat==='income'?guessIncomeType(combined):undefined;
+    cands.push({ date: extractDate(l)||extractDate(String(raw))||todayISO(), amount:amt,
+      vendor, desc:(subjM&&!isTotal? subjM[1].slice(0,60): l.replace(/[\t ]+/g,' ').slice(0,70)),
+      cat, ...(incomeType?{incomeType}:{}), src:src||'manual', conf:(isTotal||fromVendor)?'high':'verify' });
+    if(cands.length>=30) break;
+  }
+  return cands;
+}
+function importCandidates(){
+  let n=0;
+  UI.candidates.forEach((c,i)=>{
+    if(!$('ck'+i)||!$('ck'+i).checked) return;
+    const amt=parseAmt($('ca'+i).value); if(!amt) return;
+    const cat=$('cc'+i).value;
+    state.tx.push({ id:uid(), date:$('cd'+i).value||todayISO(), cat,
+      sub:$('cv'+i).value.trim(), desc:$('cx'+i).value.trim(), amt:round2(amt), src:c.src||'manual', ded:false,
+      ...(cat==='income'?{incomeType:c.incomeType||guessIncomeType(($('cv'+i).value||'')+' '+($('cx'+i).value||''))||'other_income'}:{}) });
+    n++;
+  });
+  UI.candidates=[]; UI.ocrMsg=''; UI.parseMsg='';
+  store.save(); renderAll(); toast(n+' entries imported');
+}
+/* ---- CSV ---- */
+function downloadTemplate(){
+  const csv='date,description,category,vendor,amount\n2026-01-05,Weekly groceries,,Massy Stores,412.50\n2026-01-07,Electricity bill,,T&TEC,398.74\n2026-01-08,Dinner out,,Restaurant dinner,486.00\n';
+  showExportModal('CSV template', csv, 'lifeledger-template.csv');
+}
+function handleCSVFile(input){
+  const f=input.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{
+    const res=parseCSVText(String(r.result||''));
+    if(res.error){ UI.csvMsg='⚠️ '+res.error; UI.csvCands=[] }
+    else { UI.csvMsg='✔ Read '+res.cands.length+' rows — preview below, then import.'; UI.csvCands=res.cands }
+    renderIngest();
+  };
+  r.readAsText(f);
+}
+function csvLine(l){ const out=[]; let cur='',q=false;
+  for(const ch of l){ if(ch==='"'){ q=!q } else if(ch===','&&!q){ out.push(cur); cur='' } else cur+=ch }
+  out.push(cur); return out.map(s=>s.trim());
+}
+function matchCatName(name){
+  const s=String(name||'').toLowerCase().replace(/[^a-z]/g,'');
+  if(!s) return null;
+  for(const c of CATS){ if(s===c.id||s===c.name.toLowerCase().replace(/[^a-z]/g,'')) return c.id }
+  for(const c of CATS){ if(s.includes(c.id)||c.name.toLowerCase().replace(/[^a-z]/g,'').includes(s)) return c.id }
+  return null;
+}
+function parseCSVText(text){
+  const lines=text.split(/\r?\n/).filter(l=>l.trim());
+  if(!lines.length) return {error:'empty file'};
+  const head=csvLine(lines[0]).map(h=>h.toLowerCase());
+  const find=(...names)=>{ for(const nm of names){ const i=head.findIndex(h=>h===nm||h.startsWith(nm)); if(i>=0) return i } return -1 };
+  let iDate=find('date'), iAmt=find('amount','amt','value','total','sum'), iDesc=find('description','desc','details','memo','notes','narrative','particulars'),
+      iVen=find('vendor','merchant','payee','store','company'), iCat=find('category','cat','type','tag');
+  if(iDate<0||iAmt<0){
+    /* maybe headerless: date,description,amount */
+    const t1=csvLine(lines[0]);
+    if(t1.length>=3 && /^\d/.test(t1[0]) && !isNaN(parseFloat(t1[t1.length-1].replace(/[^\d.]/g,'')))){
+      iDate=0; iDesc=1; iAmt=t1.length-1; iVen=-1; iCat=-1; lines.unshift([]);
+    } else return {error:'Could not find date/amount columns. Use the template to see the expected headers.'};
+  }
+  const cands=[];
+  for(let r=1;r<lines.length;r++){
+    const c=csvLine(lines[r]);
+    if(!c[iDate]) continue;
+    const amt=Math.abs(parseAmt(c[iAmt])); if(!amt) continue;
+    const desc=iDesc>=0? c[iDesc]:'';
+    const ven=iVen>=0? c[iVen]:'';
+    const cat=(iCat>=0&&matchCatName(c[iCat]))||guessCat(desc+' '+ven)||'other';
+    const incomeType=cat==='income'?guessIncomeType(desc+' '+ven):null;
+    const dt=extractDate(c[iDate])||todayISO();
+    cands.push({date:dt, amount:round2(amt), vendor:ven, desc, cat, ...(incomeType?{incomeType}:{}), src:'csv'});
+  }
+  return {cands};
+}
+function importCSV(){
+  let n=0;
+  for(const c of (UI.csvCands||[])){
+    state.tx.push({id:uid(), date:c.date, cat:c.cat, sub:c.vendor, desc:c.desc, amt:c.amount, src:'csv', ded:false,
+      ...(c.cat==='income'?{incomeType:c.incomeType||guessIncomeType((c.vendor||'')+' '+(c.desc||''))||'other_income'}:{})}); n++;
+  }
+  UI.csvCands=[]; UI.csvMsg='';
+  store.save(); renderAll(); toast(n+' rows imported from CSV');
+}
+
+/* ================================================================
+   EXPORT / IMPORT / MENU / ROUTER / BOOT
+   ================================================================ */
+function csvOf(ts){
+  const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const head=['date','category','subcategory','description','amount','source','tax_deductible'];
+  return [head.join(',')].concat(ts.map(t=>[t.date,t.cat,t.sub||'',t.desc||'',t.amt.toFixed(2),t.src,t.ded?'yes':'no'].map(q).join(','))).join('\n');
+}
+function exportCSV(filtered){
+  let ts=filtered? ledgerRows(): state.tx.slice();
+  ts.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+  showExportModal('Transactions CSV — '+ts.length+' rows', csvOf(ts), 'lifeledger-transactions.csv');
+}
+function exportGridCSV(){
+  const y=UI.gridYear, M=gridMatrix(y);
+  const rows=[['Category',...MONTHS,'Year total','Avg/mo','Budget/mo']];
+  for(const r of M.incRows) rows.push([r.label.replace('💼 ',''),...r.vals.map(v=>v||''),r.vals.reduce((a,b)=>a+b,0),'','']);
+  for(const g of M.expGroups) for(const cr of g.cats){
+    const tot=cr.vals.reduce((a,b)=>a+b,0); if(!tot && !(+state.budgets[cr.c.id])) continue;
+    rows.push([cr.c.name,...cr.vals.map(v=>v||''),tot,'',+state.budgets[cr.c.id]||'']);
+  }
+  showExportModal('Annual grid '+y+' CSV', rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n'), 'lifeledger-grid-'+y+'.csv');
+}
+function exportJSON(){ showExportModal('Backup JSON — save this file to keep or move your data', JSON.stringify(state,null,1), 'lifeledger-backup.json') }
+function showExportModal(title, content, filename){
+  let m=$('expModal');
+  if(!m){ m=document.createElement('div'); m.id='expModal';
+    m.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:200;padding:16px;overflow:auto';
+    document.body.appendChild(m) }
+  m.innerHTML=`<div class="card" style="max-width:760px;margin:6vh auto;position:relative">
+    <button class="btn ghost small" style="position:absolute;top:10px;right:10px" onclick="this.closest('#expModal').style.display='none'">✕ close</button>
+    <h3>${esc(title)}</h3>
+    <p class="hint">If the download doesn’t start (the in-app preview blocks downloads), select all text below and copy it.</p>
+    <button class="btn small" onclick="downloadBlob('${esc(filename)}')">⬇️ Download file</button>
+    <textarea id="expTA" spellcheck="false" style="width:100%;height:44vh;margin-top:10px;font-family:ui-monospace,Consolas,monospace;font-size:11.5px">${esc(content)}</textarea>
+  </div>`;
+  m.style.display='block';
+}
+function downloadBlob(name){
+  const blob=new Blob([$('expTA').value],{type:'text/plain'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name;
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function importJSONClick(){ closeMenu(); $('jsonFile').click() }
+function importJSONFile(input){
+  const f=input.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const p=JSON.parse(r.result);
+      if(!p||!Array.isArray(p.tx)) throw new Error('bad format');
+      const base=freshState();
+      state={...base, ...p, settings:migrateSettings(Object.assign({}, p.settings||{})), meta:{...base.meta, ...(p.meta||{}), init:true}};
+      migrateIncomeTypes(state); migrateWorkspace(state);
+      store.save(); bootTimeDefaults(); renderAll(); toast('Backup restored — '+p.tx.length+' entries');
+    }catch(e){ toast('That file is not a valid LifeLedger backup') }
+    input.value='';
+  };
+  r.readAsText(f);
+}
+function toggleMenu(e){ e.stopPropagation(); $('dataMenu').classList.toggle('open') }
+function closeMenu(){ $('dataMenu').classList.remove('open') }
+document.addEventListener('click', e=>{ if(!e.target.closest('.menu')||e.target.closest('.dropdown')) closeMenu() });
+function setCurrency(v){
+  const c=CURRENCIES.find(x=>x[0]===v)||CURRENCIES[0];
+  state.settings.currency=c[0]; state.settings.symbol=c[1];
+  store.save(); renderAll();
+}
+function updateSaveBadge(){
+  const b=$('saveBadge');
+  if(store.ok){ b.textContent='✔ saved locally'; b.className='badge' }
+  else { b.textContent='⚠ preview mode — use Data ▾ ▸ Export JSON to keep changes'; b.className='badge warn' }
+}
+function showView(v){
+  UI.view=v;
+  document.querySelectorAll('.view').forEach(x=>x.classList.remove('on'));
+  const el=$('v-'+v); if(el) el.classList.add('on');
+  document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active', b.dataset.v===v));
+  window.scrollTo({top:0});
+}
+function renderBanner(){
+  $('banner').innerHTML = state.meta.sample
+    ? `<div class="banner">🎲 You're exploring <b>sample data</b> — 13 months of realistic, Trinidad-flavoured entries. When you're ready: <button class="btn small ghost" onclick="clearSample(this)">🧹 Clear sample data</button> then add your own.</div>`
+    : '';
+}
+function bootTimeDefaults(){
+  const lm=latestMonthWithTx()||{y:new Date().getFullYear(), m:new Date().getMonth()};
+  UI.month={y:lm.y, m:lm.m};
+  UI.gridYear=lm.y;
+  UI.ledgerFilter={cat:'all', src:'all', q:'', month:'all'};
+  UI.editingId=null; UI.candidates=[]; UI.csvCands=[]; UI.emailText=''; UI.ocrMsg=''; UI.parseMsg=''; UI.csvMsg='';
+}
+function renderAll(){
+  renderBanner(); renderDash(); renderLedger(); renderGrid(); renderBudgets(); renderHousehold(); renderProjects(); renderIncome(); renderPlan(); renderIngest(); updateSaveBadge();
+}
+/* ================================================================
+   VIEW: HOUSEHOLD
+   ================================================================ */
+function householdMemberOptions(sel, includeShared=true){
+  const shared=includeShared?'<option value="">🏠 Household / shared</option>':'';
+  return shared+state.household.members.map(m=>'<option value="'+m.id+'" '+(m.id===sel?'selected':'')+'>'+esc(m.name)+'</option>').join('');
+}
+function householdMemberName(id){
+  const m=state.household.members.find(x=>x.id===id); return m?m.name:'Household / shared';
+}
+function addHouseholdMember(){
+  const name=$('hhMemberName')?.value.trim(), role=$('hhMemberRole')?.value||'Contributor';
+  if(!name){toast('Enter a household member name');return}
+  state.household.members.push({id:uid(),name,role,active:true}); store.save(); renderAll(); toast(name+' added to household');
+}
+function deleteHouseholdMember(id){
+  if(state.household.members.length<=1){toast('Keep at least one household member');return}
+  state.household.members=state.household.members.filter(m=>m.id!==id);
+  for(const s of state.streams) if(s.memberId===id) s.memberId=null;
+  for(const t of state.tx) if(t.memberId===id) t.memberId=null;
+  store.save(); renderAll(); toast('Household member removed');
+}
+function setStreamMember(id,memberId){
+  const s=state.streams.find(x=>x.id===id); if(!s)return;
+  s.memberId=memberId||null; store.save(); renderHousehold(); renderIncome();
+}
+function renderHousehold(){
+  const el=$('v-household'), mk=UI.month, st=monthStats(mk.y,mk.m);
+  const plannedIncome=state.streams.reduce((a,s)=>a+(+s.monthly||0),0);
+  const budgeted=EXPENSE_CATS.reduce((a,c)=>a+(+state.budgets[c.id]||0),0);
+  const members=state.household.members.map(m=>{
+    const planned=state.streams.filter(s=>s.memberId===m.id).reduce((a,s)=>a+(+s.monthly||0),0);
+    const mi=txForMonth(mk.y,mk.m).filter(t=>t.cat==='income'&&t.memberId===m.id).reduce((a,x)=>a+x.amt,0);
+    const me=txForMonth(mk.y,mk.m).filter(t=>t.cat!=='income'&&t.memberId===m.id).reduce((a,x)=>a+x.amt,0);
+    return '<div class="bcard"><div class="hd"><span>👤</span><b>'+esc(m.name)+'</b><span class="grow"></span><span class="chip grey">'+esc(m.role||'Contributor')+'</span><button class="btn ghost small" onclick="deleteHouseholdMember(\''+m.id+'\')">✕</button></div>'+
+      '<div class="row"><span class="mut">planned income</span><span class="num">'+fmt0(planned)+'/mo</span></div>'+
+      '<div class="row"><span class="mut">actual income</span><span class="num pos b">'+fmt0(mi)+'</span></div>'+
+      '<div class="row"><span class="mut">actual expenses</span><span class="num">'+fmt0(me)+'</span></div></div>';
+  }).join('')||'<div class="mut">No named contributors yet. Shared transactions remain valid.</div>';
+  const streams=state.streams.map(s=>'<tr><td>'+esc(s.label)+'</td><td class="num">'+fmt0(s.monthly)+'/mo</td><td><select style="min-width:180px" onchange="setStreamMember(\''+s.id+'\',this.value)">'+householdMemberOptions(s.memberId||'')+'</select></td></tr>').join('')||'<tr><td colspan="3" class="mut">No recurring income streams yet. Add them in Income Map.</td></tr>';
+  const spend=state.household.members.map(m=>{ const e=txForMonth(mk.y,mk.m).filter(t=>t.cat!=='income'&&t.memberId===m.id).reduce((a,x)=>a+x.amt,0); return '<tr><td>'+esc(m.name)+'</td><td class="num">'+fmt0(e)+'</td><td>'+(e?'member-attributed':'—')+'</td></tr>'; }).join('')||'<tr><td colspan="3" class="mut">No member-attributed expenses this month.</td></tr>';
+  el.innerHTML='<div class="card"><div class="cardhead"><h3 style="margin:0">🏠 Household budget</h3><select style="width:auto" onchange="UI.month=parseMK(this.value);renderHousehold()">'+monthOptions(mk.y+'-'+mk.m)+'</select><span class="grow"></span><span class="chip '+(st.inc-st.exp>=0?'green':'red')+'">'+fmt0(st.inc-st.exp)+' '+(st.inc-st.exp>=0?'surplus':'deficit')+'</span></div>'+
+  '<p class="hint" style="margin:0">Multiple earners and other contributors can be attributed without changing the underlying ledger or income taxonomy.</p>'+
+  '<div class="kpis" style="margin-top:12px"><div class="kpi"><div class="lbl">Planned recurring income</div><div class="v pos">'+fmt0(plannedIncome)+'</div><div class="sub">all streams / month</div></div>'+
+  '<div class="kpi"><div class="lbl">'+MONTHS[mk.m]+' actual income</div><div class="v pos">'+fmt0(st.inc)+'</div><div class="sub">household inflows</div></div>'+
+  '<div class="kpi"><div class="lbl">'+MONTHS[mk.m]+' expenses</div><div class="v">'+fmt0(st.exp)+'</div><div class="sub">household outflows</div></div>'+
+  '<div class="kpi"><div class="lbl">Monthly budgets</div><div class="v">'+fmt0(budgeted)+'</div><div class="sub">shared category budgets</div></div></div></div>'+
+  '<div class="grid2"><div class="card"><div class="cardhead"><h3 style="margin:0">👥 Household contributors</h3></div><div class="bcards">'+members+'</div>'+
+  '<div class="formgrid" style="margin-top:12px"><div><label class="f">Name *</label><input id="hhMemberName" type="text" placeholder="Partner / spouse / adult child"></div>'+
+  '<div><label class="f">Role</label><select id="hhMemberRole"><option>Primary</option><option>Partner / spouse</option><option>Remote professional</option><option>Stay-at-home professional</option><option>Adult child</option><option>Other contributor</option></select></div>'+
+  '<div style="display:flex;align-items:end"><button class="btn" onclick="addHouseholdMember()">➕ Add contributor</button></div></div></div>'+
+  '<div class="card"><div class="cardhead"><h3 style="margin:0">💼 Income by contributor</h3></div><div class="scrollx"><table class="t"><thead><tr><th>Income stream</th><th class="num">Planned</th><th>Contributor</th></tr></thead><tbody>'+streams+'</tbody></table></div><p class="hint">Assignment changes attribution only; cashflow and income subtype treatment stay unchanged.</p></div></div>'+
+  '<div class="grid2"><div class="card"><h3>📊 Spending attribution</h3><div class="scrollx"><table class="t"><thead><tr><th>Contributor</th><th class="num">'+MONTHS[mk.m]+' spend</th><th>Coverage</th></tr></thead><tbody>'+spend+'</tbody></table></div><p class="hint">Unassigned expenses remain household/shared.</p></div>'+
+  '<div class="card"><div class="cardhead"><h3 style="margin:0">🎯 Monthly household budget</h3><span class="grow"></span><button class="btn ghost small" onclick="showView(\'budgets\')">Edit category budgets →</button></div>'+
+  '<div class="kpis"><div class="kpi"><div class="lbl">Budget</div><div class="v">'+fmt0(budgeted)+'</div><div class="sub">per month</div></div><div class="kpi"><div class="lbl">Actual</div><div class="v">'+fmt0(st.exp)+'</div><div class="sub">selected month</div></div>'+
+  '<div class="kpi"><div class="lbl">Variance</div><div class="v '+(budgeted-st.exp<0?'neg':'pos')+'">'+fmt0(budgeted-st.exp)+'</div><div class="sub">'+(budgeted-st.exp<0?'over budget':'remaining')+'</div></div></div></div></div>';
+}/* ================================================================
+   VIEW: PROJECTS & SPECIAL BUDGETS
+   ================================================================ */
+const PROJECT_TYPES=[['home','Home'],['event','Event / celebration'],['major_purchase','Major purchase'],['other','Other special project']];
+const PROJECT_STATUSES=[['planning','Planning'],['active','Active'],['on_hold','On hold'],['completed','Completed'],['cancelled','Cancelled']];
+const PROJECT_PRIORITIES=[['normal','Normal'],['high','High'],['emergency','🔴 Emergency']];
+function projectOptionsForLedger(sel){return '<option value="">— none —</option>'+state.projects.filter(p=>p.status!=='completed'&&p.status!=='cancelled').map(p=>'<option value="'+p.id+'" '+(p.id===sel?'selected':'')+'>'+projectTypeEmoji(p.type)+' '+esc(p.name)+'</option>').join('')}
+function projectItemOptionsForLedger(pid,sel){const p=state.projects.find(x=>x.id===pid);if(!p)return '<option value="">— none —</option>';return '<option value="">— unallocated —</option>'+p.items.map(i=>'<option value="'+i.id+'" '+(i.id===sel?'selected':'')+'>'+esc(i.name)+'</option>').join('')}
+function refreshProjectItems(pfx){const pid=$(pfx+'Project')?.value||'';const wrap=$(pfx+'ProjectItemWrap');const sel=$(pfx+'ProjectItem');if(!wrap||!sel)return;wrap.style.display=pid?'block':'none';sel.innerHTML=projectItemOptionsForLedger(pid,sel.value)}
+function toggleProjectFields(pfx){const cat=$(pfx+'Cat')?.value;const wrap=$(pfx+'ProjectWrap');if(!wrap)return;wrap.style.display=cat==='income'?'none':'block';if(cat==='income'){const s=$(pfx+'Project');if(s)s.value='';refreshProjectItems(pfx)}}
+function projectTypeLabel(id){const x=PROJECT_TYPES.find(x=>x[0]===id);return x?x[1]:'Other special project'}
+function projectTypeEmoji(id){return ({home:'🏠',event:'🎉',major_purchase:'🛒',other:'🛠️'})[id]||'🛠️'}
+function projectStatusLabel(id){const x=PROJECT_STATUSES.find(x=>x[0]===id);return x?x[1]:'Planning'}
+function projectBudget(p){const n=p.items.reduce((a,i)=>a+(+i.budget||0),0);return n>0?n:(+p.baseBudget||0)}
+function projectActual(p,itemId){return state.tx.filter(t=>t.projectId===p.id&&(itemId?t.projectItemId===itemId:true)&&t.cat!=='income').reduce((a,t)=>a+t.amt,0)}
+function projectFunding(p){
+  const budget=projectBudget(p), actual=projectActual(p), remaining=Math.max(0,budget-actual), t=t12();
+  const available=Math.max(0,t.incAvg-t.expAvg), fp=p.fundingPlan||{}, fixed=+fp.fixedMonthlyContribution||0, pct=+fp.surplusAllocationPct||0;
+  const monthly=fixed>0?fixed:available*pct/100, reserve=+fp.startingReserve||0, oneTime=+fp.oneTimeContribution||0, initial=Math.max(0,reserve+oneTime-actual);
+  const months=monthly>0&&remaining>initial?Math.ceil((remaining-initial)/monthly):0; const eta=months?new Date(new Date().getFullYear(),new Date().getMonth()+months,1):null;
+  return {budget,actual,remaining,available,monthly,reserve,oneTime,initial,months,eta};
+}
+function addProject(){
+  const name=$('projName')?.value.trim(); if(!name){toast('Give the project a name');return}
+  const p={id:uid(),name,type:$('projType')?.value||'home',priority:'normal',status:'planning',startDate:todayISO(),targetDate:$('projTarget')?.value||'',baseBudget:round2(parseAmt($('projBudget')?.value)),notes:'',items:[],fundingPlan:{enabled:false,startingReserve:0,oneTimeContribution:0,surplusAllocationPct:0,fixedMonthlyContribution:0}};
+  state.projects.push(p);store.save();renderProjects();renderLedger();toast('Project created');
+}
+function deleteProject(id){state.projects=state.projects.filter(p=>p.id!==id);for(const t of state.tx)if(t.projectId===id){t.projectId=null;t.projectItemId=null}store.save();renderAll();toast('Project removed; ledger entries kept')}
+function updateProjectField(id,key,val){const p=state.projects.find(x=>x.id===id);if(!p)return;if(key==='budget')p.baseBudget=parseAmt(val);else p[key]=val;store.save();renderProjects();renderLedger()}
+function updateProjectPriority(id,val){updateProjectField(id,'priority',val)}
+function updateProjectFunding(id,key,val){const p=state.projects.find(x=>x.id===id);if(!p)return;p.fundingPlan=p.fundingPlan||{enabled:false,startingReserve:0,oneTimeContribution:0,surplusAllocationPct:0,fixedMonthlyContribution:0};p.fundingPlan[key]=parseAmt(val);store.save();renderProjects()}
+function addProjectItem(id){const n=$('pi_name_'+id)?.value.trim(),b=parseAmt($('pi_budget_'+id)?.value),p=state.projects.find(x=>x.id===id);if(!p||!n){toast('Enter a project item');return}p.items.push({id:uid(),name:n,budget:round2(b),notes:''});store.save();renderProjects();renderLedger()}
+function deleteProjectItem(pid,iid){const p=state.projects.find(x=>x.id===pid);if(!p)return;p.items=p.items.filter(i=>i.id!==iid);for(const t of state.tx)if(t.projectItemId===iid)t.projectItemId=null;store.save();renderProjects()}
+function renderProjects(){
+  const el=$('v-projects'); const cards=state.projects.map(p=>{
+    const f=projectFunding(p), pct=f.budget>0?Math.min(100,f.actual/f.budget*100):0;
+    const items=p.items.map(i=>{const a=projectActual(p,i.id),r=(+i.budget||0)-a;return '<tr><td>'+esc(i.name)+'</td><td class="num">'+fmt0(i.budget)+'</td><td class="num">'+fmt0(a)+'</td><td class="num '+(r<0?'neg':'pos')+'">'+fmt0(r)+'</td><td><button class="btn ghost small" onclick="deleteProjectItem(\''+p.id+'\',\''+i.id+'\')">✕</button></td></tr>'}).join('')||'<tr><td colspan="5" class="mut">No line items yet.</td></tr>';
+    return '<div class="card project-card"><div class="cardhead"><h3 style="margin:0">'+projectTypeEmoji(p.type)+' '+esc(p.name)+'</h3><span class="chip '+(p.priority==='emergency'?'red':p.priority==='high'?'amber':'grey')+'">'+(p.priority==='emergency'?'🔴 Emergency':p.priority==='high'?'High':'Normal')+'</span><span class="chip '+(p.status==='completed'?'green':p.status==='cancelled'?'red':p.status==='active'?'amber':'grey')+'">'+esc(projectStatusLabel(p.status))+'</span><span class="grow"></span><button class="btn ghost small" onclick="deleteProject(\''+p.id+'\')">Delete</button></div>'+
+    '<div class="formgrid"><div><label class="f">Category</label><select onchange="updateProjectField(\''+p.id+'\',\'type\',this.value)">'+PROJECT_TYPES.map(x=>'<option value="'+x[0]+'" '+(x[0]===p.type?'selected':'')+'>'+x[1]+'</option>').join('')+'</select></div>'+
+    '<div><label class="f">Priority</label><select onchange="updateProjectPriority(\''+p.id+'\',this.value)">'+PROJECT_PRIORITIES.map(x=>'<option value="'+x[0]+'" '+(x[0]===p.priority?'selected':'')+'>'+x[1]+'</option>').join('')+'</select></div>'+
+    '<div><label class="f">Status</label><select onchange="updateProjectField(\''+p.id+'\',\'status\',this.value)">'+PROJECT_STATUSES.map(x=>'<option value="'+x[0]+'" '+(x[0]===p.status?'selected':'')+'>'+x[1]+'</option>').join('')+'</select></div>'+
+    '<div><label class="f">Target date</label><input type="date" value="'+esc(p.targetDate||'')+'" onchange="updateProjectField(\''+p.id+'\',\'targetDate\',this.value)"></div><div><label class="f">Base budget</label><input type="number" min="0" step="10" value="'+(p.baseBudget||'')+'" onchange="updateProjectField(\''+p.id+'\',\'budget\',this.value)"></div></div>'+
+    '<div class="kpis" style="margin-top:12px"><div class="kpi"><div class="lbl">Budget</div><div class="v">'+fmt0(f.budget)+'</div><div class="sub">'+(p.items.length?'sum of items':'base budget')+'</div></div>'+
+    '<div class="kpi"><div class="lbl">Actual</div><div class="v">'+fmt0(f.actual)+'</div><div class="sub">linked ledger costs</div></div><div class="kpi"><div class="lbl">Remaining</div><div class="v '+(f.remaining>0?'pos':'neg')+'">'+fmt0(f.remaining)+'</div><div class="sub">'+(f.remaining>0?'to spend':'budget used')+'</div></div>'+
+    '<div class="kpi"><div class="lbl">Completion</div><div class="v">'+pct.toFixed(0)+'%</div><div class="sub">'+(p.targetDate?'target '+esc(p.targetDate):'no target')+'</div></div></div>'+
+    '<div class="bar"><i style="width:'+pct.toFixed(0)+'%;background:'+(f.remaining<0?'#c62f2f':'#15803d')+'"></i></div><h4 style="margin:12px 0 6px">📋 Budget items</h4>'+
+    '<div class="scrollx"><table class="t"><thead><tr><th>Item</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">Remaining</th><th></th></tr></thead><tbody>'+items+'</tbody></table></div>'+
+    '<div class="formgrid" style="margin-top:10px"><div><label class="f">New item</label><input id="pi_name_'+p.id+'" type="text" placeholder="e.g. Roofing materials"></div><div><label class="f">Item budget</label><input id="pi_budget_'+p.id+'" type="number" min="0" step="10" placeholder="0.00"></div><div style="display:flex;align-items:end"><button class="btn" onclick="addProjectItem(\''+p.id+'\')">➕ Add item</button></div></div>'+
+    '<details class="sec" style="margin-top:12px"><summary>💰 Funding plan</summary><div class="inner"><p class="hint">Projection uses trailing-12 average income minus expenses as available surplus. It is a planning estimate only; Life Ledger does not transfer money automatically.</p>'+
+    '<div class="formgrid"><div><label class="f">Existing project reserve</label><input type="number" min="0" step="10" value="'+(f.reserve||'')+'" onchange="updateProjectFunding(\''+p.id+'\',\'startingReserve\',this.value)"></div>'+
+    '<div><label class="f">One-time contribution</label><input type="number" min="0" step="10" value="'+(f.oneTime||'')+'" onchange="updateProjectFunding(\''+p.id+'\',\'oneTimeContribution\',this.value)"></div>'+
+    '<div><label class="f">Surplus allocation %</label><input type="number" min="0" max="100" step="5" value="'+(p.fundingPlan?.surplusAllocationPct||'')+'" onchange="updateProjectFunding(\''+p.id+'\',\'surplusAllocationPct\',this.value)"></div>'+
+    '<div><label class="f">Fixed monthly contribution</label><input type="number" min="0" step="10" value="'+(p.fundingPlan?.fixedMonthlyContribution||'')+'" onchange="updateProjectFunding(\''+p.id+'\',\'fixedMonthlyContribution\',this.value)"></div></div>'+
+    '<div class="kpis" style="margin-top:10px"><div class="kpi"><div class="lbl">Available T12 surplus</div><div class="v">'+fmt0(f.available)+'</div><div class="sub">income − expenses</div></div><div class="kpi"><div class="lbl">Monthly funding</div><div class="v">'+fmt0(f.monthly)+'</div><div class="sub">project allocation</div></div><div class="kpi"><div class="lbl">Projected months</div><div class="v">'+(f.months||'—')+'</div><div class="sub">'+(f.eta?'≈ '+MONTHS[f.eta.getMonth()]+' '+f.eta.getFullYear():'set a contribution')+'</div></div><div class="kpi"><div class="lbl">Reserve + one-time</div><div class="v">'+fmt0(f.reserve+f.oneTime)+'</div><div class="sub">starting funding</div></div></div></div></details></div>';
+  }).join('');
+  el.innerHTML='<div class="card"><div class="cardhead"><h3 style="margin:0">🛠️ Projects & special budgets</h3><span class="grow"></span><button class="btn ghost small" onclick="showView(\'budgets\')">Monthly budgets →</button></div><p class="hint" style="margin:0">Use finite budgets for roof repairs, refurbishments, plumbing/sewerage emergencies, events, major purchases and other special goals. Emergency is a priority, not a project category.</p>'+
+  '<div class="formgrid" style="margin-top:12px"><div><label class="f">Project name *</label><input id="projName" type="text" placeholder="e.g. Roof replacement"></div><div><label class="f">Category</label><select id="projType">'+PROJECT_TYPES.map(x=>'<option value="'+x[0]+'">'+x[1]+'</option>').join('')+'</select></div><div><label class="f">Base budget</label><input id="projBudget" type="number" min="0" step="10" placeholder="0.00"></div><div><label class="f">Target date</label><input id="projTarget" type="date"></div><div style="display:flex;align-items:end"><button class="btn" onclick="addProject()">➕ Create project</button></div></div></div>'+
+  (cards||'<div class="card" style="text-align:center;padding:36px"><div style="font-size:38px">🛠️</div><h3>No special projects yet</h3><p class="mut">Create a finite budget instead of forcing a renovation, event or emergency into a recurring monthly category.</p></div>');
+}(function boot(){
+  /* expose read/write access for the browser console & tests */
+  window.LL={ get state(){return state}, set state(v){ state=v }, get UI(){return UI} };
+  const loaded=store.load();
+  state=loaded||freshState();
+  if(loaded) state.settings=migrateSettings(state.settings);   /* migrate older saves to the current schema */
+  migrateWorkspace(state);
+  if(!loaded){ const s=buildSample(); state.tx=s.tx; state.budgets=s.budgets; state.streams=s.streams; state.meta.sample=true; migrateIncomeTypes(state); store.save() }
+  else migrateIncomeTypes(state);
+  if(!state.meta) state.meta={init:true,sample:false};
+  $('currencySel').innerHTML=CURRENCIES.map(c=>`<option value="${c[0]}" ${c[0]===state.settings.currency?'selected':''}>${c[0]} ${c[1]}</option>`).join('');
+  bootTimeDefaults();
+  renderAll();
+  showView('dash');
+})();
+</script>
+</body>
+</html>

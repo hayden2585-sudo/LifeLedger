@@ -1,0 +1,8 @@
+{
+  "appId": "tt.lifeledger.app",
+  "appName": "LifeLedger",
+  "webDir": "www",
+  "backgroundColor": "#eef1f6",
+  "android": { "allowMixedContent": false },
+  "server": { "androidScheme": "https" }
+}

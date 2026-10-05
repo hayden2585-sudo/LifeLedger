@@ -1,0 +1,17 @@
+{
+  "name": "LifeLedger — Expense & Income Spreadsheet",
+  "short_name": "LifeLedger",
+  "description": "Offline-first personal finance spreadsheet: expenses, budgets, income mapping and minimum-wage lens. All data stays on your device.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#eef1f6",
+  "theme_color": "#1f2a4d",
+  "categories": ["finance", "productivity", "utilities"],
+  "icons": [
+    { "src": "icons/icon-192.png",     "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png",     "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

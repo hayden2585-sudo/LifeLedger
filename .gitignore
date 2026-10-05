@@ -1,0 +1,10 @@
+node_modules/
+dist-pwa/
+desktop/app/
+desktop/release/
+android/www/
+android/android/
+android/.gradle/
+android/build/
+*.log
+.DS_Store

@@ -1,0 +1,19 @@
+{
+  "name": "lifeledger",
+  "version": "1.3.0",
+  "private": true,
+  "type": "module",
+  "description": "LifeLedger — offline-first expense & income spreadsheet. Single-file web app · installable PWA · Windows/macOS/Linux desktop · Android.",
+  "license": "MIT",
+  "scripts": {
+    "build": "node build.mjs --all",
+    "build:web": "node build.mjs",
+    "build:pwa": "node build.mjs --pwa",
+    "serve": "node server.mjs",
+    "icons": "node tools/gen-icons.mjs",
+    "test": "node tests/run.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "^25.0.0"
+  }
+}
