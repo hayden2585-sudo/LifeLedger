@@ -9,9 +9,12 @@
     const s=buildSample();
     state.tx=s.tx; state.budgets=s.budgets; state.streams=s.streams;
     state.household=s.household||{members:[]}; state.projects=s.projects||[];
-    state.meta.sample=true; migrateIncomeTypes(state); store.save();
+    state.meta.sample=true; migrateIncomeTypes(state); migrateProjectArchives(); store.save();
   }
-  else migrateIncomeTypes(state);
+  else {
+    migrateIncomeTypes(state);
+    if(migrateProjectArchives()) store.save();
+  }
   if(!state.meta) state.meta={init:true,sample:false};
   $('currencySel').innerHTML=CURRENCIES.map(c=>`<option value="${c[0]}" ${c[0]===state.settings.currency?'selected':''}>${c[0]} ${c[1]}</option>`).join('');
   bootTimeDefaults();

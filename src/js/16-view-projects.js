@@ -4,7 +4,7 @@
 const PROJECT_TYPES=[['home','Home'],['event','Event / celebration'],['major_purchase','Major purchase'],['other','Other special project']];
 const PROJECT_STATUSES=[['planning','Planning'],['active','Active'],['on_hold','On hold'],['completed','Completed'],['cancelled','Cancelled']];
 const PROJECT_PRIORITIES=[['normal','Normal'],['high','High'],['emergency','🔴 Emergency']];
-function projectOptionsForLedger(sel){return '<option value="">— none —</option>'+state.projects.filter(p=>p.status!=='completed'&&p.status!=='cancelled').map(p=>'<option value="'+p.id+'" '+(p.id===sel?'selected':'')+'>'+projectTypeEmoji(p.type)+' '+esc(p.name)+'</option>').join('')}
+function projectOptionsForLedger(sel){return '<option value="">— none —</option>'+state.projects.filter(p=>!isArchived(p)).map(p=>'<option value="'+p.id+'" '+(p.id===sel?'selected':'')+'>'+projectTypeEmoji(p.type)+' '+esc(p.name)+'</option>').join('')}
 function projectItemOptionsForLedger(pid,sel){const p=state.projects.find(x=>x.id===pid);if(!p)return '<option value="">— none —</option>';return '<option value="">— unallocated —</option>'+p.items.map(i=>'<option value="'+i.id+'" '+(i.id===sel?'selected':'')+'>'+esc(i.name)+'</option>').join('')}
 function refreshProjectItems(pfx){const pid=$(pfx+'Project')?.value||'';const wrap=$(pfx+'ProjectItemWrap');const sel=$(pfx+'ProjectItem');if(!wrap||!sel)return;wrap.style.display=pid?'block':'none';sel.innerHTML=projectItemOptionsForLedger(pid,sel.value)}
 function toggleProjectFields(pfx){const cat=$(pfx+'Cat')?.value;const wrap=$(pfx+'ProjectWrap');if(!wrap)return;wrap.style.display=cat==='income'?'none':'block';if(cat==='income'){const s=$(pfx+'Project');if(s)s.value='';refreshProjectItems(pfx)}}
@@ -25,21 +25,37 @@ function projectActual(p,itemId){
 }
 function projectFunding(p){
   const budget=projectBudget(p), actual=projectActual(p), remaining=Math.max(0,budget-actual), t=t12();
-  /* "what I can free up" is the surplus earned over the whole trailing window, not a
-     per-month average — with incAvg/expAvg divided by the months recorded and the
-     contribution then added 12× a year, a part-year user was credited four times the
-     surplus they had actually earned. */
-  const available=Math.max(0,t.incTotal-t.expTotal), fp=p.fundingPlan||{}, fixed=+fp.fixedMonthlyContribution||0, pct=+fp.surplusAllocationPct||0;
-  const monthly=fixed>0?fixed:available*pct/100, reserve=+fp.startingReserve||0, oneTime=+fp.oneTimeContribution||0, initial=Math.max(0,reserve+oneTime-actual);
-  const months=monthly>0&&remaining>initial?Math.ceil((remaining-initial)/monthly):0; const eta=months?new Date(new Date().getFullYear(),new Date().getMonth()+months,1):null;
-  return {budget,actual,remaining,available,monthly,reserve,oneTime,initial,months,eta,t};
+  /* The percentage is applied to an average MONTHLY surplus, so the displayed
+     contribution has the same unit as the fixed-monthly option. The raw trailing-window
+     surplus remains available separately for auditability. */
+  const available=Math.max(0,t.incTotal-t.expTotal);
+  const monthlySurplus=Math.max(0,t.netAvg);
+  const fp=p.fundingPlan||{}, fixed=+fp.fixedMonthlyContribution||0, pct=Math.min(100,Math.max(0,+fp.surplusAllocationPct||0));
+  const monthly=fixed>0?fixed:monthlySurplus*pct/100;
+  const reserve=+fp.startingReserve||0, oneTime=+fp.oneTimeContribution||0, initial=Math.max(0,reserve+oneTime-actual);
+  const months=monthly>0&&remaining>initial?Math.ceil((remaining-initial)/monthly):0;
+  const eta=months?new Date(new Date().getFullYear(),new Date().getMonth()+months,1):null;
+  return {budget,actual,remaining,available,monthlySurplus,monthly,reserve,oneTime,initial,months,eta,t};
 }
 function addProject(){
   const name=$('projName')?.value.trim(); if(!name){toast('Give the project a name');return}
   const p={id:uid(),name,type:$('projType')?.value||'home',priority:'normal',status:'planning',startDate:todayISO(),targetDate:$('projTarget')?.value||'',baseBudget:round2(parseAmt($('projBudget')?.value)),notes:'',items:[],archived:false,completedAt:null,fundingPlan:{enabled:false,startingReserve:0,oneTimeContribution:0,surplusAllocationPct:0,fixedMonthlyContribution:0}};
   state.projects.push(p);store.save();renderProjects();renderLedger();toast('Project created');
 }
-function deleteProject(id){state.projects=state.projects.filter(p=>p.id!==id);for(const t of state.tx)if(t.projectId===id){t.projectId=null;t.projectItemId=null}store.save();renderAll();toast('Project removed; ledger entries kept')}
+function deleteProject(id,rerender=true){
+  state.projects=state.projects.filter(p=>p.id!==id);
+  for(const t of state.tx){
+    if(t.projectId===id || t._archivedProjectId===id){
+      delete t.projectId;
+      delete t.projectItemId;
+      delete t._archivedProjectId;
+      delete t._archivedItemId;
+    }
+  }
+  store.save();
+  if(rerender) renderAll();
+  toast('Project removed; ledger entries kept');
+}
 
 /* ================================================================
    PROJECT COMPLETION & ARCHIVE  (IMPROVEMENT 7)
@@ -53,9 +69,9 @@ function deleteProject(id){state.projects=state.projects.filter(p=>p.id!==id);fo
    released while archived, so monthly category totals are untouched,
    and “Restore” re-links every entry that belonged to it.
    ================================================================ */
-function isArchived(p){ return !!(p && (p.archived || p.status==='completed')) }
+function isArchived(p){ return !!(p && (p.archived || p.status==='completed' || p.status==='cancelled')) }
 const ARCHIVE_STATUSES=['completed','cancelled'];
-function archiveProjectSummary(p){
+function makeArchiveSnapshot(p){
   const budget=projectBudget(p), actual=projectActual(p), remaining=budget-actual;
   const items=(p.items||[]).map(i=>{ const a=projectActual(p,i.id); return {name:i.name, budget:+i.budget||0, actual:a, variance:(+i.budget||0)-a} });
   const linked=state.tx.filter(t=>t.projectId===p.id||(t._archivedProjectId===p.id)).length;
@@ -64,9 +80,13 @@ function archiveProjectSummary(p){
   if(start&&end){ const a=new Date(start), b=new Date(end);
     if(!isNaN(a)&&!isNaN(b)) months=Math.max(1,Math.round((b-a)/(1000*60*60*24*30.44))) }
   const variance=budget-actual;
-  return { p, budget, actual, remaining, items, linked, start, end, months, variance,
-    over: variance<0, overPct: budget>0? Math.abs(variance)/budget*100 : 0,
-    completionPct: budget>0? Math.min(100, actual/budget*100) : (actual>0?100:0) };
+  return {budget,actual,remaining,items,linked,start,end,months,variance,
+    over:variance<0, overPct:budget>0?Math.abs(variance)/budget*100:0,
+    completionPct:budget>0?Math.min(100,actual/budget*100):(actual>0?100:0)};
+}
+function archiveProjectSummary(p){
+  if(p && p.archived && p.archiveSummary) return {p,...p.archiveSummary};
+  return {p,...makeArchiveSnapshot(p)};
 }
 function setProjectStatus(id,val,btn){
   const p=state.projects.find(x=>x.id===id); if(!p) return;
@@ -81,25 +101,54 @@ function setProjectStatus(id,val,btn){
   p.status=val; p.completedAt=null; p.archived=false;
   store.save(); renderProjects(); renderDash(); toast('Project status set to '+projectStatusLabel(val));
 }
-function archiveProject(id,status){
+function archiveProject(id,status,rerender=true){
   const p=state.projects.find(x=>x.id===id); if(!p) return;
   p.status=status||'completed';
   p.archived=true;
   p.completedAt=todayISO();
-  /* freeze the record against the ledger without destroying category aggregation */
-  let released=0;
-  for(const t of state.tx) if(t.projectId===p.id){ t._archivedProjectId=p.id; if(t.projectItemId) t._archivedItemId=t.projectItemId; t.projectId=null; t.projectItemId=null; released++ }
-  store.save(); renderAll();
+  /* Capture the final financial state BEFORE releasing the live project links. */
+  p.archiveSummary=makeArchiveSnapshot(p);
+  for(const t of state.tx) if(t.projectId===p.id){
+    t._archivedProjectId=p.id;
+    if(t.projectItemId) t._archivedItemId=t.projectItemId;
+    delete t.projectId;
+    delete t.projectItemId;
+  }
+  store.save();
+  if(rerender) renderAll();
   const f=archiveProjectSummary(p);
   toast('“'+p.name+'” archived — '+fmt0(f.actual)+' actual vs '+fmt0(f.budget)+' budget ('+(f.over? fmt0(-f.variance)+' over' : fmt0(f.variance)+' unused')+')');
 }
 function reopenProject(id){
   const p=state.projects.find(x=>x.id===id); if(!p) return;
   p.archived=false; p.status='active'; p.completedAt=null;
+  delete p.archiveSummary;
   let relinked=0;
-  for(const t of state.tx) if(t._archivedProjectId===p.id){ t.projectId=p.id; if(t._archivedItemId) t.projectItemId=t._archivedItemId; delete t._archivedProjectId; delete t._archivedItemId; relinked++ }
+  for(const t of state.tx) if(t._archivedProjectId===p.id){
+    t.projectId=p.id;
+    if(t._archivedItemId) t.projectItemId=t._archivedItemId;
+    delete t._archivedProjectId;
+    delete t._archivedItemId;
+    relinked++
+  }
   store.save(); renderAll();
   toast('“'+p.name+'” reopened'+(relinked? ' — '+relinked+' ledger entr'+(relinked===1?'y':'ies')+' re-linked':''));
+}
+function migrateProjectArchives(){
+  let changed=false;
+  for(const p of (state.projects||[])){
+    if(!isArchived(p)) continue;
+    if(!p.archiveSummary) p.archiveSummary=makeArchiveSnapshot(p), changed=true;
+    for(const t of state.tx){
+      if(t.projectId!==p.id) continue;
+      t._archivedProjectId=p.id;
+      if(t.projectItemId) t._archivedItemId=t.projectItemId;
+      delete t.projectId;
+      delete t.projectItemId;
+      changed=true;
+    }
+  }
+  return changed;
 }
 function archivedProjects(){
   return state.projects.filter(isArchived)
@@ -167,12 +216,12 @@ function renderProjects(){
     '<div class="bar"><i style="width:'+pct.toFixed(0)+'%;background:'+(f.remaining<0?'#c62f2f':'#15803d')+'"></i></div><h4 style="margin:12px 0 6px">📋 Budget items</h4>'+
     '<div class="scrollx"><table class="t"><thead><tr><th>Item</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">Remaining</th><th></th></tr></thead><tbody>'+items+'</tbody></table></div>'+
     '<div class="formgrid" style="margin-top:10px"><div><label class="f">New item</label><input id="pi_name_'+p.id+'" type="text" placeholder="e.g. Roofing materials"></div><div><label class="f">Item budget</label><input id="pi_budget_'+p.id+'" type="number" min="0" step="10" placeholder="0.00"></div><div style="display:flex;align-items:end"><button class="btn" onclick="addProjectItem(\''+p.id+'\')">➕ Add item</button></div></div>'+
-    '<details class="sec" style="margin-top:12px"><summary>💰 Funding plan</summary><div class="inner"><p class="hint">Projection uses trailing-12 average income minus expenses as available surplus. It is a planning estimate only; Life Ledger does not transfer money automatically.</p>'+
+    '<details class="sec" style="margin-top:12px"><summary>💰 Funding plan</summary><div class="inner"><p class="hint">Projection uses the observed trailing-window net surplus as an audit figure; percentage-based funding is applied to the average monthly surplus so the contribution stays on a monthly unit. It is a planning estimate only; Life Ledger does not transfer money automatically.</p>'+
     '<div class="formgrid"><div><label class="f">Existing project reserve</label><input type="number" min="0" step="10" value="'+(f.reserve||'')+'" onchange="updateProjectFunding(\''+p.id+'\',\'startingReserve\',this.value)"></div>'+
     '<div><label class="f">One-time contribution</label><input type="number" min="0" step="10" value="'+(f.oneTime||'')+'" onchange="updateProjectFunding(\''+p.id+'\',\'oneTimeContribution\',this.value)"></div>'+
     '<div><label class="f">Surplus allocation %</label><input type="number" min="0" max="100" step="5" value="'+(p.fundingPlan?.surplusAllocationPct||'')+'" onchange="updateProjectFunding(\''+p.id+'\',\'surplusAllocationPct\',this.value)"></div>'+
     '<div><label class="f">Fixed monthly contribution</label><input type="number" min="0" step="10" value="'+(p.fundingPlan?.fixedMonthlyContribution||'')+'" onchange="updateProjectFunding(\''+p.id+'\',\'fixedMonthlyContribution\',this.value)"></div></div>'+
-    '<div class="kpis" style="margin-top:10px"><div class="kpi"><div class="lbl">Available T12 surplus</div><div class="v">'+fmt0(f.available)+'</div><div class="sub">income − expenses</div></div><div class="kpi"><div class="lbl">Monthly funding</div><div class="v">'+fmt0(f.monthly)+'</div><div class="sub">project allocation</div></div><div class="kpi"><div class="lbl">Projected months</div><div class="v">'+(f.months||'—')+'</div><div class="sub">'+(f.eta?'≈ '+MONTHS[f.eta.getMonth()]+' '+f.eta.getFullYear():'set a contribution')+'</div></div><div class="kpi"><div class="lbl">Reserve + one-time</div><div class="v">'+fmt0(f.reserve+f.oneTime)+'</div><div class="sub">starting funding</div></div></div></div></details></div>';
+    '<div class="kpis" style="margin-top:10px"><div class="kpi"><div class="lbl">T12 net surplus</div><div class="v">'+fmt0(f.available)+'</div><div class="sub">raw trailing-window income − expenses</div></div><div class="kpi"><div class="lbl">Monthly funding</div><div class="v">'+fmt0(f.monthly)+'</div><div class="sub">'+(p.fundingPlan?.fixedMonthlyContribution>0?'fixed monthly contribution':fmt0(f.monthlySurplus)+'/mo surplus × allocation')+'</div></div><div class="kpi"><div class="lbl">Projected months</div><div class="v">'+(f.months||'—')+'</div><div class="sub">'+(f.eta?'≈ '+MONTHS[f.eta.getMonth()]+' '+f.eta.getFullYear():'set a contribution')+'</div></div><div class="kpi"><div class="lbl">Reserve + one-time</div><div class="v">'+fmt0(f.reserve+f.oneTime)+'</div><div class="sub">starting funding</div></div></div></div></details></div>';
   }).join('');
   el.innerHTML='<div class="card"><div class="cardhead"><h3 style="margin:0">🛠️ Projects & special budgets</h3><span class="grow"></span><button class="btn ghost small" onclick="showView(\'budgets\')">Monthly budgets →</button></div><p class="hint" style="margin:0">Use finite budgets for roof repairs, refurbishments, plumbing/sewerage emergencies, events, major purchases and other special goals. Emergency is a priority, not a project category.</p>'+
   '<div class="formgrid" style="margin-top:12px"><div><label class="f">Project name *</label><input id="projName" type="text" placeholder="e.g. Roof replacement"></div><div><label class="f">Category</label><select id="projType">'+PROJECT_TYPES.map(x=>'<option value="'+x[0]+'">'+x[1]+'</option>').join('')+'</select></div><div><label class="f">Base budget</label><input id="projBudget" type="number" min="0" step="10" placeholder="0.00"></div><div><label class="f">Target date</label><input id="projTarget" type="date"></div><div style="display:flex;align-items:end"><button class="btn" onclick="addProject()">➕ Create project</button></div></div></div>'+

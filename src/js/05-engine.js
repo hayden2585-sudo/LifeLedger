@@ -253,11 +253,13 @@ function dataHealth(){
     if(!imp.some(x=>x.cat==='income')) emptyBoth.push({y,m,label:MONTHS[m]+' '+y, kind:'no income'});
     else if(!imp.some(x=>x.cat!=='income')) emptyBoth.push({y,m,label:MONTHS[m]+' '+y, kind:'no expenses'});
   }
+  const windowKeys=new Set(t.ms.map(x=>x.y+'-'+x.m));
   const streams=state.streams.map(s=>{
     const posts=streamPostings(s);
-    const last=posts.reduce((a,x)=> a&&a>x.date? a : x.date, null);
-    const posted12=posts.filter(x=>txYM(x).y>=t.ms[0].y).length;
-    return { label:s.label, monthly:+s.monthly||0, last, posted12, ok: !!last && posted12>0 };
+    const inWindow=posts.filter(x=>{ const p=txYM(x); return windowKeys.has(p.y+'-'+p.m) });
+    const last=inWindow.reduce((a,x)=> a&&a>x.date? a : x.date, null);
+    const posted12=inWindow.length;
+    return { label:s.label, monthly:+s.monthly||0, last, posted12, ok: posted12>0 };
   }).sort((a,b)=> (a.ok?1:0)-(b.ok?1:0));
 
   const income=state.tx.filter(x=>x.cat==='income').length, expense=state.tx.length-income;

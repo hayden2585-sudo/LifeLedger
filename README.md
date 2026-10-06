@@ -84,8 +84,8 @@ npm install                     # electron + electron-builder
 
 | Platform | Command | Output in `desktop/release/` |
 |---|---|---|
-| **Windows** | `npm run dist:win` | `LifeLedger Setup 1.1.0.exe` (installer) + `LifeLedger 1.1.0.exe` (portable) |
-| **macOS** | `npm run dist:mac` | `LifeLedger-1.1.0-arm64.dmg` and `-x64.dmg` |
+| **Windows** | `npm run dist:win` | `LifeLedger Setup 1.4.3.exe` (installer) + `LifeLedger 1.4.3.exe` (portable) |
+| **macOS** | `npm run dist:mac` | `LifeLedger-1.4.3-arm64.dmg` and `-x64.dmg` |
 | **Linux** | `npm run dist:linux` | `.AppImage` + `.deb` |
 | All at once | `npm run dist` | everything above |
 
@@ -144,7 +144,7 @@ not persist — export before closing.**
 A new install is named for you — from your household once contributors exist
 ("Hayden & Simone"), "Sample household ledger" while the demo data is loaded, or a
 plain "My ledger" otherwise. The name appears in the browser tab, the header and your
-export filenames (`boodoosingh-household-2026-backup-2026-10-05.json`). Rename it with
+export filenames (`my-ledger-backup-2026-10-05.json`). Rename it with
 the ✎ field in the header; clearing the field reverts to the derived name. A custom
 name is saved in your backup and is never overwritten by the automatic derivation.
 
@@ -170,13 +170,13 @@ What that means in practice:
 
 ```bash
 npm install        # jsdom (dev-only)
-npm test           # 228 jsdom checks against web/lifeledger.html
+npm test           # 238 jsdom checks against web/lifeledger.html
 node tools/gen-icons.mjs   # regenerate icon PNGs after changing the logo logic
 node server.mjs    # serve PWA at http://127.0.0.1:8080
 ```
 
 - Dev mode: open `src/index.html` over `node server.mjs`-style HTTP (or any static server) —
-  it loads the 14 unbundled modules for readable stack traces. Opening `src/index.html`
+  it loads the 16 unbundled modules for readable stack traces. Opening `src/index.html`
   directly from disk also works in most browsers.
 - The bundler inlines CSS+JS back into one file; `build.mjs` output is verified
   lossless and the test suite runs against the **built** artifact, in strict mode.
@@ -198,7 +198,7 @@ subtypes for salary/wages, side hustles, salary arrears, overtime/extra duties, 
 sale of assets, gratuity, welfare benefits, rental income, and gifts/remittances (including
 money sent from abroad).
 
-**Status:** release 1.4.2 adds named ledgers and an honest privacy notice. 1.4.1 corrected the trailing-12 average denominator, makes the project budget field honest\nand stops non-monthly fixed costs being reported as overspending. 1.4.0 added the proactive alerts panel,\ndata health check, year-over-year comparison, household spending split, project archive lifecycle and the\nstorage-loss warning. See the changelog.
+**Status:** release 1.4.3 hardens project archives, save-failure reporting, funding units, coverage denominators and the CI regression harness. 1.4.2 adds named ledgers and an honest privacy notice; 1.4.1 corrected the trailing-12 average denominator, made the project budget field honest and stopped non-monthly fixed costs being reported as overspending. 1.4.0 added the proactive alerts panel, data health check, year-over-year comparison, household spending split, project archive lifecycle and the storage-loss warning. See the changelog.
 
 **Disclaimer:** educational tool — not financial, tax or investment advice.
 
@@ -209,6 +209,17 @@ GitHub is intended to become the canonical source and release store. The applica
 The important separation is: **GitHub distributes application code; each device retains authority over its own financial data.** User backups, local storage and credentials are never part of the application repository.
 
 ## 9 · Changelog
+
+**1.4.3** — data-integrity and release hardening
+- **Project archives are now true snapshots.** Completion/cancellation stores the final budget, actuals, line-item figures, variance, duration and linked-entry count at archive time. Later ledger edits cannot rewrite the historical archive; Restore removes the snapshot and re-links the original entries for continued live editing.
+- **Cancelled projects now follow the same archive lifecycle as completed projects.** Archived projects are consistently excluded from working lists and ledger project selectors.
+- **Save failures are surfaced.** A local-storage quota/write failure no longer leaves the header claiming that data was saved; the badge explicitly tells the user to export a JSON backup.
+- **Funding-plan units are consistent.** Percentage allocations now apply to average monthly surplus; the raw trailing-window surplus remains displayed separately for auditability.
+- **Income and expense averages disclose their own denominators.** Income averages use months with recorded income, expense averages use months with recorded expenses, and net surplus uses the populated-month window.
+- **Stream health uses the exact trailing-12 calendar window**, avoiding calendar-year leakage outside the reported period.
+- **Sample data no longer misclassifies savings transfers as project spend.** Project actuals now demonstrate actual upkeep costs while the funding plan remains the funding model.
+- **Regression harness hardened.** The archive lifecycle runs in an isolated DOM so jsdom's compiled-handler lifecycle cannot turn a valid application render into a false indefinite test hang.
+- Regression coverage: **237 jsdom assertions** across four suites.
 
 **1.4.2** — named ledgers and an honest privacy notice
 - **Your ledger now has a name.** Previously the workspace was anonymous: nothing

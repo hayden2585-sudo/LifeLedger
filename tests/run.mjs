@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* Test runner: jsdom suites against a built target (default dist/lifeledger.html). */
+/* Test runner: jsdom suites against a built target (default web/lifeledger.html). */
 import { spawnSync } from 'node:child_process';
 const suites = ['smoke.cjs', 'smoke2.cjs', 'smoke3.cjs', 'smoke4.cjs'];
 const target = process.argv[2] || 'web/lifeledger.html';

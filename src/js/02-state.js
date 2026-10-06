@@ -2,7 +2,14 @@
 const LSKEY = 'lifeledger.v1';
 const store = {
   ok: (()=>{ try{ localStorage.setItem('__t','1'); localStorage.removeItem('__t'); return true }catch(e){ return false } })(),
-  save(){ if(this.ok){ try{ localStorage.setItem(LSKEY, JSON.stringify(state)) }catch(e){} } updateSaveBadge() },
+  lastSaveOk: true,
+  save(){
+    if(!this.ok){ this.lastSaveOk=false; updateSaveBadge(); return false }
+    try{ localStorage.setItem(LSKEY, JSON.stringify(state)); this.lastSaveOk=true }
+    catch(e){ this.lastSaveOk=false }
+    updateSaveBadge();
+    return this.lastSaveOk;
+  },
   load(){ if(!this.ok) return null; try{ const s = localStorage.getItem(LSKEY); return s? JSON.parse(s): null }catch(e){ return null } }
 };
 function freshState(){
@@ -53,7 +60,7 @@ function migrateWorkspace(s){
     if(!p.status) p.status='planning';
     /* projects finished before the archive workflow existed are archived on load,
        so a completed project never keeps cluttering the working list */
-    if(p.archived===undefined) p.archived = (p.status==='completed');
+    if(p.archived===undefined) p.archived = (p.status==='completed' || p.status==='cancelled');
     if(p.completedAt===undefined) p.completedAt = p.archived? (p.targetDate||p.startDate||null) : null;
     if(!p.fundingPlan) p.fundingPlan={enabled:false,startingReserve:0,oneTimeContribution:0,surplusAllocationPct:0,fixedMonthlyContribution:0};
   }
@@ -130,24 +137,31 @@ function trailingMonths(n){ const out=[], now=new Date();
    Views that need an annual figure use incTotal/expTotal; views that show a
    representative monthly figure use incAvg/expAvg. */
 function t12(){
-  const ms = trailingMonths(12); let inc=0, exp=0; const byCat={};
-  let withData=0;
-  for(const {y,m} of ms){ const k=txForMonth(y,m);
+  const ms=trailingMonths(12); let inc=0, exp=0; const byCat={};
+  let withData=0, incomeMonths=0, expenseMonths=0;
+  for(const {y,m} of ms){
+    const k=txForMonth(y,m);
     if(k.length) withData++;
     const a=agg(k); inc+=a.inc; exp+=a.exp;
-    for(const c in a.byCat) byCat[c]=(byCat[c]||0)+a.byCat[c] }
+    if(a.inc>0) incomeMonths++;
+    if(a.exp>0) expenseMonths++;
+    for(const c in a.byCat) byCat[c]=(byCat[c]||0)+a.byCat[c];
+  }
   const totN=ms.length;
-  const n=withData||1;                    /* never divide by zero */
-  const byCatAvg={}, byCatTotals={}; for(const k in byCat){ byCatAvg[k]=byCat[k]/n; byCatTotals[k]=byCat[k] }
-  return { ms, n, withData, totN, coverage:withData/totN,
-    /* is this a full trailing-12 picture, or a part-year one? coveredMonths is the
-       inclusive span the user's records occupy, used to explain gaps honestly. */
+  const n=withData||1;
+  const incN=incomeMonths||1, expN=expenseMonths||1;
+  const byCatAvg={}, byCatTotals={};
+  for(const k in byCat){ byCatAvg[k]=byCat[k]/n; byCatTotals[k]=byCat[k] }
+  return { ms, n, withData, incomeMonths, expenseMonths, totN, coverage:withData/totN,
     coveredMonths: (()=>{ const f=state.tx.reduce((a,x)=>a&&a<x.date?a:x.date,null);
       if(!f) return 0;
       const now=new Date(), s=new Date(f+'T00:00:00');
       return (now.getFullYear()-s.getFullYear())*12 + (now.getMonth()-s.getMonth()) + 1 })(),
-    incAvg:inc/n, expAvg:exp/n, byCatAvg, incTotal:inc, expTotal:exp, byCatTotals,
-    avgBasis: withData? 'recorded months' : 'no data' };
+    incAvg:inc/incN, expAvg:exp/expN, netAvg:(inc-exp)/n, byCatAvg,
+    incTotal:inc, expTotal:exp, byCatTotals,
+    avgBasis: withData? 'recorded months' : 'no data',
+    incomeAvgBasis: incomeMonths? 'income months' : 'no income',
+    expenseAvgBasis: expenseMonths? 'expense months' : 'no expenses' };
 }
 function latestMonthWithTx(){ let best=null; for(const t of state.tx){ const p=txYM(t);
     if(!best || p.y>best.y || (p.y===best.y && p.m>best.m)) best=p } return best }

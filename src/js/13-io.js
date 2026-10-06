@@ -113,8 +113,9 @@ function setCurrency(v){
 }
 function updateSaveBadge(){
   const b=$('saveBadge');
-  if(store.ok){ b.textContent='✔ saved locally'; b.className='badge' }
-  else { b.textContent='⚠ preview mode — use Data ▾ ▸ Export JSON to keep changes'; b.className='badge warn' }
+  if(store.ok && store.lastSaveOk){ b.textContent='✔ saved locally'; b.className='badge' }
+  else if(!store.ok){ b.textContent='⚠ preview mode — use Data ▾ ▸ Export JSON to keep changes'; b.className='badge warn' }
+  else { b.textContent='⚠ save failed — export JSON now'; b.className='badge warn' }
 }
 /* ----------------------------------------------------------------
    WORKSPACE CHROME  (1.4.2)

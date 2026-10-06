@@ -73,6 +73,8 @@ setTimeout(()=>{ try{
     h.counts.income===w.LL.state.tx.filter(t=>t.cat==='income').length &&
     h.counts.income+h.counts.expense===w.LL.state.tx.length);
   assert('#11 dataHealth reports stream staleness', Array.isArray(h.streams) && h.streams.every(s=>'ok' in s && 'last' in s));
+  assert('#11 stream posting counts are bounded to the exact trailing-12 window',
+    h.streams.filter(s=>/Salary/.test(s.label)).every(s=>s.posted12===12));
   assert('#11 a stream that IS being posted is not reported as stale',
     h.streams.filter(s=>s.posted12>0).every(s=>s.ok) && h.streams.some(s=>s.posted12>0));
   assert('#11 income posted by a stream produces no false alert',
@@ -164,47 +166,68 @@ setTimeout(()=>{ try{
   assert('layout: the annual spreadsheet header is still 18 columns',
     d.querySelectorAll('#v-grid table.sheet thead th').length===18);
 
-  /* ---------- #7 project completion & archive ---------- */
-  const roof=w.LL.state.projects.find(p=>!p.archived);
-  const roofTx=w.LL.state.tx.filter(t=>t.projectId===roof.id);
+  /* ---------- #7 project completion & archive ----------
+     Use a fresh DOM for the lifecycle mutation. jsdom can retain compiled inline
+     event-handler state on a heavily-mutated section; this is a harness concern,
+     not a reason to weaken the production redraw path. */
+  const archiveDom=makeDom();
+  const aw=archiveDom.window, ad=archiveDom.window.document;
+  const roof=aw.LL.state.projects.find(p=>!p.archived);
+  const roofTx=aw.LL.state.tx.filter(t=>t.projectId===roof.id);
   assert('#7 sample project has linked ledger costs', roofTx.length>0);
-  const actualBefore=w.projectActual(roof);
-  w.setProjectStatus(roof.id,'completed');            /* first click arms */
+  const actualBefore=aw.projectActual(roof);
+  aw.setProjectStatus(roof.id,'completed');
   assert('#7 archiving is two-step (arms before it acts)', !roof.archived && roof.status!=='completed');
-  assert('#7 archived project leaves the active rendering list', w.isArchived(roof)===false);
-  w.showView('projects');
-  assert('#7 status control explains that completion archives', /Completed archives the project/.test(d.getElementById('v-projects').innerHTML));
-  w.archiveProject(roof.id,'completed');
+  assert('#7 an unarchived project is not treated as archived', aw.isArchived(roof)===false);
+  aw.showView('projects');
+  assert('#7 status control explains that completion archives', /Completed archives the project/.test(ad.getElementById('v-projects').innerHTML));
+  aw.archiveProject(roof.id,'completed');
   assert('#7 archive stamps status AND completion date', roof.status==='completed' && !!roof.completedAt);
-  assert('#7 archive keeps the ledger entries alive', w.LL.state.tx.length>0 && w.LL.state.tx.filter(t=>t._archivedProjectId===roof.id).length===roofTx.length);
+  assert('#7 archive stores a final snapshot', !!roof.archiveSummary && roof.archiveSummary.actual===actualBefore);
+  assert('#7 archive keeps the ledger entries alive', aw.LL.state.tx.length>0 && aw.LL.state.tx.filter(t=>t._archivedProjectId===roof.id).length===roofTx.length);
   assert('#7 archive releases the live project link so category totals are untouched',
-    w.LL.state.tx.every(t=>t.projectId!==roof.id));
-  w.showView('projects');
-  const pj=d.getElementById('v-projects').innerHTML;
+    aw.LL.state.tx.every(t=>t.projectId!==roof.id));
+  aw.showView('projects');
+  const pj=ad.getElementById('v-projects').innerHTML;
   assert('#7 archived projects render in the archive section', /Project archive/.test(pj));
   assert('#7 archive summary shows final budget, actual, variance and duration',
     /Final budget/.test(pj) && /Actual spend/.test(pj) && /Variance/.test(pj) && /Duration/.test(pj));
-  const archivedCards=[...d.querySelectorAll('#v-projects details.sec .project-card')];
-  const liveCards=[...d.querySelectorAll('#v-projects .project-card')].filter(c=>!c.closest('details.sec'));
+  const archivedCards=[...ad.querySelectorAll('#v-projects details.sec .project-card')];
+  const liveCards=[...ad.querySelectorAll('#v-projects .project-card')].filter(c=>!c.closest('details.sec'));
   assert('#7 archived project is removed from the working list',
     !liveCards.some(c=>/Downstairs bathroom refurbishment/.test(c.textContent)));
   assert('#7 archived project appears inside the archive section instead',
     archivedCards.some(c=>/Downstairs bathroom refurbishment/.test(c.textContent)));
-  const arch=w.archivedProjects().find(f=>f.p.id===roof.id);
-  assert('#7 archiveProjectSummary freezes the final figures',
-    !!arch && arch.budget===w.projectBudget(roof) && Math.abs(arch.actual-actualBefore)<0.01 && arch.actual>0);
+  const arch=aw.archivedProjects().find(f=>f.p.id===roof.id);
+  assert('#7 archiveProjectSummary returns the stored final figures',
+    !!arch && arch.budget===roof.archiveSummary.budget && arch.actual===roof.archiveSummary.actual && arch.actual===actualBefore);
   assert('#7 archiveProjectSummary lists line-item variance',
     arch.items.length===roof.items.length && arch.items.every(i=>'variance' in i));
-  assert('#7 archived spend is not lost when the live link is released',
-    w.LL.state.tx.filter(t=>t._archivedProjectId===roof.id).length>0 && arch.actual===actualBefore);
-  assert('#7 archived line items still resolve their own spend',
+  const snapActual=roof.archiveSummary.actual, linkedBefore=roof.archiveSummary.linked;
+  const archivedTx=aw.LL.state.tx.find(t=>t._archivedProjectId===roof.id);
+  archivedTx.amt+=9999;
+  const frozenAfterEdit=aw.archivedProjects().find(f=>f.p.id===roof.id);
+  assert('#7 archived summary stays frozen after a later ledger edit',
+    frozenAfterEdit.actual===snapActual && frozenAfterEdit.linked===linkedBefore);
+  archivedTx.amt-=9999;
+  assert('#7 archived line items still resolve their stored final spend',
     arch.items.filter(i=>i.actual>0).length>0 || arch.items.length===0);
-  assert('#7 projected aggregate covers every archived project', w.archivedProjects().length>=2);
-  w.reopenProject(roof.id);
-  assert('#7 restore returns the project to active status', roof.archived===false && roof.status==='active' && roof.completedAt===null);
-  assert('#7 restore re-links the ledger entries', w.LL.state.tx.filter(t=>t.projectId===roof.id).length===roofTx.length);
-  assert('#7 restore does not duplicate or lose entries', w.LL.state.tx.length>roofTx.length);
-  assert('#7 projectActual reads the same total after a restore round-trip', Math.abs(w.projectActual(roof)-actualBefore)<0.01);
+  assert('#7 projected aggregate covers every archived project', aw.archivedProjects().length>=2);
+  aw.reopenProject(roof.id);
+  assert('#7 restore returns the project to active status', roof.archived===false && roof.status==='active' && roof.completedAt===null && !roof.archiveSummary);
+  assert('#7 restore re-links the ledger entries', aw.LL.state.tx.filter(t=>t.projectId===roof.id).length===roofTx.length);
+  assert('#7 restore does not duplicate or lose entries', aw.LL.state.tx.length>roofTx.length);
+  assert('#7 projectActual reads the same total after a restore round-trip', Math.abs(aw.projectActual(roof)-actualBefore)<0.01);
+
+  const cancelled={id:'cancelled1',name:'Cancelled test project',type:'other',priority:'normal',status:'planning',archived:false,
+    startDate:'2026-01-10',targetDate:'2026-02-10',baseBudget:3000,notes:'',items:[],fundingPlan:{}};
+  aw.LL.state.projects.push(cancelled);
+  aw.archiveProject(cancelled.id,'cancelled',false);
+  assert('#7 cancelled projects are archived too', cancelled.archived===true && cancelled.status==='cancelled' && !!cancelled.archiveSummary);
+  assert('#7 cancelled projects leave the working list', aw.archivedProjects().some(f=>f.p.id===cancelled.id));
+  aw.deleteProject(cancelled.id,false);
+  assert('#7 deleting an archived project clears its residual ledger attribution',
+    !aw.LL.state.tx.some(t=>t.projectId===cancelled.id||t._archivedProjectId===cancelled.id));
 
   /* a project that finishes nowhere near its line items keeps its final budget */
   const fake={id:'ptest',name:'Test project',type:'other',priority:'normal',status:'completed',archived:true,
@@ -231,10 +254,14 @@ setTimeout(()=>{ try{
   const full=t12Of(w);
   assert('1.4.1 t12 exposes both a per-recorded-month average and the raw totals',
     'incAvg' in full && 'incTotal' in full && 'byCatTotals' in full && 'coverage' in full);
-  assert('1.4.1 t12 divides by months WITH data, not a hard 12',
+  assert('1.4.1 t12 keeps the overall populated-month denominator',
     full.n===full.withData && full.withData<=full.totN);
-  assert('1.4.1 incAvg * n reconstructs the total',
-    Math.abs(full.incAvg*full.n-full.incTotal)<0.01);
+  assert('1.4.1 income average uses only months with recorded income',
+    full.incAvg*full.incomeMonths>=full.incTotal-0.01 && Math.abs(full.incAvg*full.incomeMonths-full.incTotal)<0.01);
+  assert('1.4.1 expense average uses only months with recorded expenses',
+    Math.abs(full.expAvg*full.expenseMonths-full.expTotal)<0.01);
+  assert('1.4.1 net average uses the populated-month window surplus',
+    Math.abs(full.netAvg*full.n-(full.incTotal-full.expTotal))<0.01);
   assert('1.4.1 sample data covers the full window so nothing moves for a year-long user',
     full.withData===12 && full.coverage===1);
 
@@ -254,14 +281,26 @@ setTimeout(()=>{ try{
     t3.coverage<1 && /averaged over 3 of the last 12 months/.test(w.coverageNote(t3)) && w.coverageIsPartial(t3));
   assert('1.4.1 byCatAvg also divides by recorded months',
     Object.keys(t3.byCatAvg).every(k=>Math.abs(t3.byCatAvg[k]*t3.n-t3.byCatTotals[k])<0.01));
+  const missingIncomeMonth=(threeMonths.find(x=>x.cat==='income')||{}).date?.slice(0,7);
+  if(missingIncomeMonth){
+    const keepThree=threeMonths.slice();
+    w.LL.state.tx=threeMonths.filter(x=>x.cat!=='income' || x.date.slice(0,7)!==missingIncomeMonth);
+    const tMissing=w.t12();
+    const incomeTotal=tMissing.incTotal;
+    assert('1.4.1 a month with expenses but no income is excluded from the income-average denominator',
+      tMissing.incomeMonths===tMissing.withData-1 && Math.abs(tMissing.incAvg*tMissing.incomeMonths-incomeTotal)<0.01);
+    w.LL.state.tx=keepThree;
+  }
 
   /* the project funding basis must be the surplus actually earned in the window */
   const proj3=w.LL.state.projects.find(x=>!x.archived);
   const f3=w.projectFunding(proj3);
   const earned=threeMonths.filter(x=>x.cat==='income').reduce((a,x)=>a+x.amt,0)
               -threeMonths.filter(x=>x.cat!=='income').reduce((a,x)=>a+x.amt,0);
-  assert('1.4.1 project funding uses surplus EARNED over the window, not a monthly average',
-    Math.abs(f3.available-Math.max(0,earned))<0.01 && f3.available>f3.t.incAvg-f3.t.expAvg);
+  assert('1.4.1 project funding preserves the raw trailing-window surplus for auditability',
+    Math.abs(f3.available-Math.max(0,earned))<0.01);
+  assert('1.4.1 project funding percentage uses a monthly surplus unit',
+    Math.abs(f3.monthly-(Math.max(0,f3.t.netAvg)*25/100))<0.01 && f3.monthlySurplus===Math.max(0,f3.t.netAvg));
   w.LL.state.tx=keepAll;
   w.renderAll();
 
@@ -390,6 +429,16 @@ setTimeout(()=>{ try{
   assert('1.4.2 punctuation-only names still produce a usable filename stem',
     w.ledgerFileStem()==='lifeledger' || /^[a-z0-9-]+$/.test(w.ledgerFileStem()));
   w.setLedgerName('');
+
+  /* ---- save-failure visibility ---- */
+  const saveDom=makeDom();
+  const saveProto=Object.getPrototypeOf(saveDom.window.localStorage);
+  const realSetItem=saveProto.setItem;
+  saveProto.setItem=function(){ throw new Error('simulated storage quota'); };
+  saveDom.window.setLedgerName('Save failure test');
+  assert('1.4.2 a failed local-storage write is not reported as saved',
+    /save failed/i.test(saveDom.window.document.getElementById('saveBadge').textContent));
+  saveProto.setItem=realSetItem;
 
   /* ---- privacy notice ---- */
   w.showView('dash');

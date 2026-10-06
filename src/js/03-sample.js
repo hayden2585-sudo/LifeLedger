@@ -78,7 +78,10 @@ function buildSample(){
   /* household + project + income-stream attribution over the generated rows */
   for(const t of tx){
     if(t.cat==='income'){ t.memberId=p1.id; t.streamId=(t.sub==='Salary'? salaryStreamId : gigStreamId); continue }
-    if(t.cat==='savings'){ t.projectId=roofId; continue }
+    /* Savings is funding allocation, not project spend; the project funding plan
+       already models reserves/contributions separately. Only actual project costs
+       belong in projectId/projectItemId. */
+    if(t.cat==='savings') continue;
     if(t.cat==='upkeep'){ t.projectId=roofId; t.projectItemId=(Math.random()<0.5?roofItemA:roofItemB); continue }
     if(['dining','toiletries','transport','parties'].includes(t.cat)) t.memberId=p2.id;
   }
