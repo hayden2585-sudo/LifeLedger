@@ -180,10 +180,31 @@ function txForYear(y){ return state.tx.filter(t=> txYM(t).y===y ) }
 function sumT(ts){ return round2(ts.reduce((a,t)=>a+t.amt,0)) }
 
 /* aggregate a tx list */
+/*
+   Accounting treatment for rotating savings (sou-sou):
+   contributions are household cash outflows but not ordinary expenses;
+   payouts are household cash inflows but not new income. Keeping them
+   outside headline income/expense prevents a payout from manufacturing
+   income and a contribution from manufacturing lifestyle spend.
+   cashIn/cashOut remain available for views that need literal liquidity.
+*/
 function agg(ts){
-  let inc=0, exp=0; const byCat={};
-  for(const t of ts){ if(t.cat==='income'){ inc+=t.amt } else { exp+=t.amt; byCat[t.cat]=(byCat[t.cat]||0)+t.amt } }
-  return {inc:round2(inc), exp:round2(exp), byCat};
+  let inc=0, exp=0, cashIn=0, cashOut=0; const byCat={};
+  for(const t of ts){
+    const amt=+t.amt||0;
+    const ctx=t.cashflowContext||inferCashflowContext((t.sub||'')+' '+(t.desc||'')+' '+(t.vendor||''));
+    if(t.cat==='income'){
+      cashIn+=amt;
+      if(ctx!=='sou_sou_payout') inc+=amt;
+    } else {
+      cashOut+=amt;
+      if(ctx!=='sou_sou_contribution'){
+        exp+=amt;
+        byCat[t.cat]=(byCat[t.cat]||0)+amt;
+      }
+    }
+  }
+  return {inc:round2(inc), exp:round2(exp), cashIn:round2(cashIn), cashOut:round2(cashOut), byCat};
 }
 /* last n calendar months incl current -> [{y,m}] oldest first */
 function trailingMonths(n){ const out=[], now=new Date();

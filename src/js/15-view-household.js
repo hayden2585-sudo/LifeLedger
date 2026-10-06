@@ -34,7 +34,9 @@ function setStreamMember(id,memberId){
    ================================================================ */
 const MEMBER_COLORS=['#3450b4','#0e9488','#d97706','#7c3aed','#be123c','#0369a1','#4d7c0f','#a16207'];
 function householdSplit(y,m){
-  const tx=txForMonth(y,m).filter(t=>t.cat!=='income');
+  /* Sou-sou contributions are cash outflows, not household spending. */
+  const tx=txForMonth(y,m).filter(t=>t.cat!=='income' &&
+    (t.cashflowContext||inferCashflowContext((t.sub||'')+' '+(t.desc||'')+' '+(t.vendor||'')))!=='sou_sou_contribution');
   const total=round2(tx.reduce((a,t)=>a+t.amt,0));
   const buckets=state.household.members.map((mem,i)=>({
     id:mem.id, name:mem.name, role:mem.role||'Contributor',

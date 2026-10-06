@@ -92,13 +92,10 @@ function renderGrid(){
    dataset is compared fairly.
    ================================================================ */
 function yearTotalsFor(y){
-  const txs=txForYear(y);
-  const inc=txs.filter(t=>t.cat==='income').reduce((a,t)=>a+t.amt,0);
-  const exp=txs.filter(t=>t.cat!=='income').reduce((a,t)=>a+t.amt,0);
+  const txs=txForYear(y), a=agg(txs);
   const monthsWith=new Set(txs.map(t=>txYM(t).m)).size;
   const effMonths=monthsWith||1;
-  const byCat={}; for(const t of txs){ if(t.cat!=='income') byCat[t.cat]=(byCat[t.cat]||0)+t.amt }
-  return {y, inc, exp, net:inc-exp, count:txs.length, monthsWith, effMonths, byCat};
+  return {y, inc:a.inc, exp:a.exp, net:a.inc-a.exp, count:txs.length, monthsWith, effMonths, byCat:a.byCat};
 }
 function yoyYears(cur){
   const ys=[...new Set([...state.tx.map(t=>txYM(t).y), cur])].sort((a,b)=>b-a);

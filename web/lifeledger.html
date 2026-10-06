@@ -848,10 +848,31 @@ function txForYear(y){ return state.tx.filter(t=> txYM(t).y===y ) }
 function sumT(ts){ return round2(ts.reduce((a,t)=>a+t.amt,0)) }
 
 /* aggregate a tx list */
+/*
+   Accounting treatment for rotating savings (sou-sou):
+   contributions are household cash outflows but not ordinary expenses;
+   payouts are household cash inflows but not new income. Keeping them
+   outside headline income/expense prevents a payout from manufacturing
+   income and a contribution from manufacturing lifestyle spend.
+   cashIn/cashOut remain available for views that need literal liquidity.
+*/
 function agg(ts){
-  let inc=0, exp=0; const byCat={};
-  for(const t of ts){ if(t.cat==='income'){ inc+=t.amt } else { exp+=t.amt; byCat[t.cat]=(byCat[t.cat]||0)+t.amt } }
-  return {inc:round2(inc), exp:round2(exp), byCat};
+  let inc=0, exp=0, cashIn=0, cashOut=0; const byCat={};
+  for(const t of ts){
+    const amt=+t.amt||0;
+    const ctx=t.cashflowContext||inferCashflowContext((t.sub||'')+' '+(t.desc||'')+' '+(t.vendor||''));
+    if(t.cat==='income'){
+      cashIn+=amt;
+      if(ctx!=='sou_sou_payout') inc+=amt;
+    } else {
+      cashOut+=amt;
+      if(ctx!=='sou_sou_contribution'){
+        exp+=amt;
+        byCat[t.cat]=(byCat[t.cat]||0)+amt;
+      }
+    }
+  }
+  return {inc:round2(inc), exp:round2(exp), cashIn:round2(cashIn), cashOut:round2(cashOut), byCat};
 }
 /* last n calendar months incl current -> [{y,m}] oldest first */
 function trailingMonths(n){ const out=[], now=new Date();
@@ -1962,13 +1983,10 @@ function renderGrid(){
    dataset is compared fairly.
    ================================================================ */
 function yearTotalsFor(y){
-  const txs=txForYear(y);
-  const inc=txs.filter(t=>t.cat==='income').reduce((a,t)=>a+t.amt,0);
-  const exp=txs.filter(t=>t.cat!=='income').reduce((a,t)=>a+t.amt,0);
+  const txs=txForYear(y), a=agg(txs);
   const monthsWith=new Set(txs.map(t=>txYM(t).m)).size;
   const effMonths=monthsWith||1;
-  const byCat={}; for(const t of txs){ if(t.cat!=='income') byCat[t.cat]=(byCat[t.cat]||0)+t.amt }
-  return {y, inc, exp, net:inc-exp, count:txs.length, monthsWith, effMonths, byCat};
+  return {y, inc:a.inc, exp:a.exp, net:a.inc-a.exp, count:txs.length, monthsWith, effMonths, byCat:a.byCat};
 }
 function yoyYears(cur){
   const ys=[...new Set([...state.tx.map(t=>txYM(t).y), cur])].sort((a,b)=>b-a);
@@ -3057,7 +3075,9 @@ function setStreamMember(id,memberId){
    ================================================================ */
 const MEMBER_COLORS=['#3450b4','#0e9488','#d97706','#7c3aed','#be123c','#0369a1','#4d7c0f','#a16207'];
 function householdSplit(y,m){
-  const tx=txForMonth(y,m).filter(t=>t.cat!=='income');
+  /* Sou-sou contributions are cash outflows, not household spending. */
+  const tx=txForMonth(y,m).filter(t=>t.cat!=='income' &&
+    (t.cashflowContext||inferCashflowContext((t.sub||'')+' '+(t.desc||'')+' '+(t.vendor||'')))!=='sou_sou_contribution');
   const total=round2(tx.reduce((a,t)=>a+t.amt,0));
   const buckets=state.household.members.map((mem,i)=>({
     id:mem.id, name:mem.name, role:mem.role||'Contributor',

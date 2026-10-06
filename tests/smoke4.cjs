@@ -95,6 +95,34 @@ setTimeout(()=>{ try{
   assert('#11 grid renders the data-health card', /Data health — is the trailing-12 picture trustworthy\?/.test(grid));
   assert('#11 grid data-health card lists each check', /Month-by-month coverage/.test(grid) && /Recurring income streams are posting/.test(grid));
 
+  /* ---------- sou-sou accounting treatment ----------
+     Context alone is not enough: rotating savings must not inflate headline
+     household income/expense totals. Literal liquidity remains available via
+     cashIn/cashOut for any future cash-position view. */
+  const keepSouTx=w.LL.state.tx.slice();
+  const souTx=[
+    {id:'sou-wage',date:w.todayISO(),cat:'income',sub:'Salary',desc:'Monthly salary',amt:5000},
+    {id:'sou-contrib',date:w.todayISO(),cat:'groceries',sub:'Sou-sou',desc:'Sou-sou contribution',amt:500},
+    {id:'sou-payout',date:w.todayISO(),cat:'income',sub:'Sou-sou',desc:'Sou-sou payout received',amt:6000},
+    {id:'sou-rent',date:w.todayISO(),cat:'rent',sub:'Landlord',desc:'Rent',amt:2000}
+  ];
+  w.LL.state.tx=souTx;
+  const souAgg=w.agg(souTx), souMonth=w.monthStats(+w.todayISO().slice(0,4),+w.todayISO().slice(5,7)-1);
+  assert('sou-sou contribution is excluded from headline expenses', souAgg.exp===2000 && !('groceries' in souAgg.byCat));
+  assert('sou-sou payout is excluded from headline income', souAgg.inc===5000);
+  assert('sou-sou remains visible as literal cash movement', souAgg.cashOut===2500 && souAgg.cashIn===11000);
+  assert('sou-sou exclusion propagates into monthly headline totals', souMonth.inc===5000 && souMonth.exp===2000);
+  assert('sou-sou payout cannot manufacture a false monthly surplus', souMonth.inc-souMonth.exp===3000);
+  const souT12=w.t12();
+  assert('sou-sou exclusion propagates into trailing-12 totals', souT12.incTotal===5000 && souT12.expTotal===2000);
+  const souYear=w.yearTotalsFor(+w.todayISO().slice(0,4));
+  assert('year-over-year totals use the same sou-sou accounting policy', souYear.inc===5000 && souYear.exp===2000 && souYear.net===3000);
+  const souSplit=w.householdSplit(+w.todayISO().slice(0,4),+w.todayISO().slice(5,7)-1);
+  assert('household spending split excludes sou-sou contributions from spending', souSplit.total===2000);
+  assert('ordinary income and ordinary spending remain unchanged by sou-sou policy',
+    souAgg.inc===5000 && souAgg.exp===2000 && souAgg.byCat.rent===2000 && !('groceries' in souAgg.byCat));
+  w.LL.state.tx=keepSouTx; w.renderAll();
+
   /* the same must hold for the sample workspace exactly as it boots */
   const pristine=makeDom();
   assert('#11 the pristine sample workspace raises no silent-stream alert',
