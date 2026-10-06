@@ -15,7 +15,7 @@ Runs everywhere from one source tree:
 | **Linux** | `.AppImage` + `.deb` | `desktop/` (Electron) |
 | **Android** | Native APK via Capacitor WebView shell | `android/` |
 
-All data stays on-device (browser/app local storage). No server, no accounts, no tracking.
+LifeLedger remains local-first. There is no required cloud account or sync service. Local account access, Guest mode and an Admin step-up protect the application experience; the complete ledger is encrypted at rest once a local account is enabled, with high-value private records receiving an additional Admin-gated encrypted layer.
 
 ---
 
@@ -41,6 +41,8 @@ lifeledger/
 │       ├── 13-io.js           ← CSV/JSON export-import, menu, router
 │       ├── 15-view-household.js ← household members + attribution
 │       ├── 16-view-projects.js  ← finite projects + funding projections
+│       ├── 17-security.js     ← local account, Guest/Normal/Admin access
+│       ├── 18-secure-storage.js ← whole-ledger encryption + encrypted backups
 │       └── 14-boot.js         ← startup + schema migration
 ├── web/lifeledger.html       ← built single-file app (open directly — no install)
 ├── pwa/
@@ -84,8 +86,8 @@ npm install                     # electron + electron-builder
 
 | Platform | Command | Output in `desktop/release/` |
 |---|---|---|
-| **Windows** | `npm run dist:win` | `LifeLedger Setup 1.4.3.exe` (installer) + `LifeLedger 1.4.3.exe` (portable) |
-| **macOS** | `npm run dist:mac` | `LifeLedger-1.4.3-arm64.dmg` and `-x64.dmg` |
+| **Windows** | `npm run dist:win` | `LifeLedger Setup 1.5.0.exe` (installer) + `LifeLedger 1.5.0.exe` (portable) |
+| **macOS** | `npm run dist:mac` | `LifeLedger-1.5.0-arm64.dmg` and `-x64.dmg` |
 | **Linux** | `npm run dist:linux` | `.AppImage` + `.deb` |
 | All at once | `npm run dist` | everything above |
 
@@ -99,7 +101,7 @@ To try it without building installers: `npm start` (runs the Electron window imm
 ## 4 · Install on Android
 
 ### Option A — PWA (fastest, ~1 minute, no build tools)
-The PWA build is a real installable app with its own icon and offline storage:
+The PWA build is a real installable app with its own icon and offline storage. The same account/encryption layer runs inside the PWA:
 
 ```bash
 node build.mjs --pwa
@@ -136,9 +138,7 @@ For a signed Play-Store release: Android Studio ▸ *Build ▸ Generate Signed B
 | Electron | Chromium profile storage (per user) | **Data ▸ Export JSON** |
 | Android (Capacitor) | WebView local storage (per device) | **Data ▸ Export JSON** |
 
-Because storage is per-origin/per-device, the JSON backup (Data ▸ Export/Import backup)
-is the way to move data between devices. **In the in-app file preview here, storage does
-not persist — export before closing.**
+Because storage is per-origin/per-device, the backup workflow is the way to move data between devices. With local-account protection enabled, the browser/PWA/Electron/Android ledger is stored as authenticated AES-GCM ciphertext at rest. **Encrypted backup/restore is now the portable migration workflow.** Plain JSON/CSV remain interoperability exports and are readable copies. In the in-app file preview here, storage does not persist — export before closing.
 
 ### Naming your ledger
 A new install is named for you — from your household once contributors exist
@@ -148,35 +148,40 @@ export filenames (`my-ledger-backup-2026-10-05.json`). Rename it with
 the ✎ field in the header; clearing the field reverts to the derived name. A custom
 name is saved in your backup and is never overwritten by the automatic derivation.
 
-### Encryption and privacy — stated plainly
-**LifeLedger does not encrypt your data.** Entries are stored as readable text in the
-browser's local storage, and exported JSON/CSV backups are plain, unprotected files.
-There is no account, password or login, so there is **no logon step** at which anything
-could be unlocked or verified. `Data ▸ Privacy & data` repeats this in-app, and it is
-shown once on a new install.
+### Encryption, accounts and privacy — stated plainly
+**LifeLedger now has a local access layer.** A normal user signs in with a device-local account. Guest mode does not open the household UI. Protected high-value details have a separate Admin step-up and are encrypted with authenticated AES-GCM storage.
 
-What that means in practice:
+**Legacy migration:** existing 1.4.x plaintext saves remain readable for backward compatibility, but a successful account setup/sign-in now performs the whole-ledger migration: the complete state is encrypted and the plaintext local-storage record is replaced only after the encrypted write succeeds.
 
-- Anyone who can use this device or sign in to this computer account, anyone using this
-  browser profile, and anyone you send a backup to **can read every figure**.
-- On a shared, family or work computer, treat the ledger as legible to others.
-- Protect it yourself: lock the device, use a dedicated browser profile for finances,
-  and keep backups somewhere you control. For at-rest secrecy, put the backup inside an
-  encrypted volume or password-protected archive — the app cannot do it for you.
-- Clearing browser data, uninstalling, or **Data ▸ Reset everything** deletes the ledger
-  permanently. Export a JSON backup first; nothing can recover it afterwards.
+What the current layer protects:
+
+- Guest mode hides the household application UI and household-derived identity from casual viewers.
+- Normal users can use the ordinary budgeting workflow while high-value private details remain masked.
+- Admin unlock reveals private details only for a temporary session; auto-lock returns the session to Normal mode.
+- Password verifiers are salted and non-reversible; admin and login passphrases are never persisted in plaintext.
+- The complete ledger is authenticated-encrypted at rest after local-account setup.
+- Encrypted backup/restore protects the portable backup with the login passphrase and works into a fresh profile.
+- Encrypted private records add a separate Admin-gated envelope, so a normal login does not reveal them.
+
+What is still outside this at-rest layer:
+
+- plain JSON/CSV exports, which remain readable interoperability files;
+- an already-unlocked operating-system session from malware or another process with equivalent access;
+- richer household roles, recovery/key-reset workflows and other multi-user controls.
+
+Clearing browser data, uninstalling, or **Data ▸ Reset everything** can permanently remove the local ledger. Keep verified backups somewhere you control.
 
 ## 6 · Development & tests
 
 ```bash
 npm install        # jsdom (dev-only)
-npm test           # 238 jsdom checks against web/lifeledger.html
+npm test           # six-suite regression gate against web/lifeledger.html
 node tools/gen-icons.mjs   # regenerate icon PNGs after changing the logo logic
 node server.mjs    # serve PWA at http://127.0.0.1:8080
 ```
 
 - Dev mode: open `src/index.html` over `node server.mjs`-style HTTP (or any static server) —
-  it loads the 16 unbundled modules for readable stack traces. Opening `src/index.html`
+  it loads the 18 unbundled modules for readable stack traces. Opening `src/index.html`
   directly from disk also works in most browsers.
 - The bundler inlines CSS+JS back into one file; `build.mjs` output is verified
   lossless and the test suite runs against the **built** artifact, in strict mode.
@@ -198,7 +203,7 @@ subtypes for salary/wages, side hustles, salary arrears, overtime/extra duties, 
 sale of assets, gratuity, welfare benefits, rental income, and gifts/remittances (including
 money sent from abroad).
 
-**Status:** release 1.4.3 hardens project archives, save-failure reporting, funding units, coverage denominators and the CI regression harness. 1.4.2 adds named ledgers and an honest privacy notice; 1.4.1 corrected the trailing-12 average denominator, made the project budget field honest and stopped non-monthly fixed costs being reported as overspending. 1.4.0 added the proactive alerts panel, data health check, year-over-year comparison, household spending split, project archive lifecycle and the storage-loss warning. See the changelog.
+**Status:** release 1.5.0 carries the security/access retrofit with local accounts, Guest mode, Admin step-up, encrypted private records, whole-ledger encryption at rest, encrypted backup/restore and an independent Microsoft benchmark. Richer household account roles, recovery/key-reset workflows and stronger protected-export policy remain planned. 1.4.2 adds named ledgers and an honest privacy notice; 1.4.1 corrected the trailing-12 average denominator, made the project budget field honest and stopped non-monthly fixed costs being reported as overspending. 1.4.0 added the proactive alerts panel, data health check, year-over-year comparison, household spending split, project archive lifecycle and the storage-loss warning. See the changelog.
 
 **Disclaimer:** educational tool — not financial, tax or investment advice.
 
@@ -209,6 +214,19 @@ GitHub is intended to become the canonical source and release store. The applica
 The important separation is: **GitHub distributes application code; each device retains authority over its own financial data.** User backups, local storage and credentials are never part of the application repository.
 
 ## 9 · Changelog
+
+**1.5.0** — layered local access and protected private records
+- Added a device-local account flow with ordinary Normal access and a true Guest mode that does not render household navigation or household-derived identity.
+- Added a separate Admin step-up key for protected personal details, with session-limited unlock and automatic timeout.
+- Added an authenticated AES-GCM envelope for restricted private records such as employer, bank-account, tax-identifier and policy/reference details.
+- Added salted PBKDF2-HMAC-SHA256 password verifiers; passphrases are never stored in plaintext.
+- Added independent security-foundation and security-access integration suites and included both in the release test runner.
+- Added a Microsoft household-budget benchmark matrix covering income/spending, monthly budgets, projected vs actual, fixed/variable/discretionary expenses, goals and Excel file-protection concepts.
+- Added whole-ledger AES-GCM encryption at rest using a key derived from the normal local login passphrase.
+- Added portable encrypted backup/restore using a passphrase-protected AES-GCM envelope, including restore into a fresh profile.
+- Added transactional legacy migration so an existing plaintext 1.4.x save is not declared protected until the encrypted replacement is successfully written.
+- Kept plain JSON/CSV as explicit readable interoperability exports rather than pretending they are encrypted.
+- Richer household account roles and recovery/key-reset controls remain future work.
 
 **1.4.3** — data-integrity and release hardening
 - **Project archives are now true snapshots.** Completion/cancellation stores the final budget, actuals, line-item figures, variance, duration and linked-entry count at archive time. Later ledger edits cannot rewrite the historical archive; Restore removes the snapshot and re-links the original entries for continued live editing.

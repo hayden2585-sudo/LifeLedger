@@ -116,4 +116,5 @@ function renderHousehold(){
   '<div class="kpi"><div class="lbl">Variance</div><div class="v '+(budgeted-st.exp<0?'neg':'pos')+'">'+fmt0(budgeted-st.exp)+'</div><div class="sub">'+(budgeted-st.exp<0?'over budget':'remaining')+'</div></div></div></div></div>'+
   /* IMPROVEMENT 8 — visual split of household spending by contributor */
   memberSplitCardHTML(mk.y, mk.m);
+  el.innerHTML += securityPrivateDetailsCardHTML();
 }

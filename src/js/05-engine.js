@@ -267,6 +267,7 @@ function dataHealth(){
   const linked=state.tx.filter(x=>x.projectId).length;
   const attributed=state.tx.filter(x=>x.memberId).length;
   const budgeted=EXPENSE_CATS.filter(c=>+state.budgets[c.id]>0).length;
+  const integrityIssues=state.tx.filter(x=>x.integrity==='review-required'||x.integrity==='conflicting'||x.integrity==='suspicious').length;
 
   const checks=[
     { id:'coverage', ok: missing.length===0, sev: missing.length>=3?'warn':'info', label:'Month-by-month coverage',
@@ -285,6 +286,9 @@ function dataHealth(){
     { id:'budgets', ok: budgeted>=8, sev:'info', label:'Budget coverage',
       detail: budgeted? budgeted+' of '+EXPENSE_CATS.length+' expense categories have a monthly budget.'
         : 'No monthly budgets set — Budgets ▸ Apply guideline budgets creates a starting set.' },
+    { id:'integrity', ok: integrityIssues===0, sev:integrityIssues>0?'warn':'info', label:'No unresolved data-integrity flags',
+      detail: integrityIssues? integrityIssues+' ledger entr'+(integrityIssues===1?'y has':'ies have')+' unresolved import/input integrity flags. High-impact analysis should be independently verified.'
+        : 'No unresolved integrity flags are attached to ledger entries.' },
     { id:'attribution', ok: (state.household.members.length<2)||attributed>0, sev:'info', label:'Household attribution in use',
       detail: state.household.members.length<2? 'Single-contributor household — attribution is optional.'
         : attributed? attributed+' entr'+(attributed===1?'y is':'ies are')+' attributed to a member; '+linked+' linked to a project.'
@@ -293,6 +297,6 @@ function dataHealth(){
   const score=checks.filter(c=>c.ok).length;
   return { checks, score, total:checks.length, pct: Math.round(score/checks.length*100),
     monthsChecked, monthsWithData:withData.length, missing, emptyBoth, streams,
-    counts:{ income, expense, unclassified, linked, attributed, budgeted, projects:(state.projects||[]).length,
+    counts:{ income, expense, unclassified, linked, attributed, budgeted, integrityIssues, projects:(state.projects||[]).length,
       archived:(state.projects||[]).filter(p=>p.archived).length, members:state.household.members.length } };
 }

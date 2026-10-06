@@ -2,15 +2,52 @@
 const LSKEY = 'lifeledger.v1';
 const store = {
   ok: (()=>{ try{ localStorage.setItem('__t','1'); localStorage.removeItem('__t'); return true }catch(e){ return false } })(),
-  lastSaveOk: true,
+  lastSaveOk:true,
+  saving:false,
+  lockedRecord:null,
+  _saveChain:Promise.resolve(),
   save(){
-    if(!this.ok){ this.lastSaveOk=false; updateSaveBadge(); return false }
-    try{ localStorage.setItem(LSKEY, JSON.stringify(state)); this.lastSaveOk=true }
-    catch(e){ this.lastSaveOk=false }
-    updateSaveBadge();
-    return this.lastSaveOk;
+    if(!this.ok){ this.lastSaveOk=false; updateSaveBadge(); return Promise.resolve(false) }
+    if(securityEnabled()&&!securitySession._ledgerKey){ this.lastSaveOk=false; updateSaveBadge(); return Promise.resolve(false) }
+    /* Preserve the original synchronous behavior for plaintext legacy/new workspaces.
+       Once whole-ledger protection is active, encryption is necessarily async and is
+       serialized so rapid UI edits cannot race each other. */
+    if(!securityEnabled()){
+      try{ const raw=JSON.stringify(state); localStorage.setItem(LSKEY,raw); this.lastSaveOk=true }
+      catch(e){ this.lastSaveOk=false }
+      updateSaveBadge();
+      return Promise.resolve(this.lastSaveOk);
+    }
+    const snapshot=JSON.parse(JSON.stringify(state));
+    this._saveChain=this._saveChain.then(async()=>{
+      this.saving=true; updateSaveBadge();
+      try{
+        const raw=await securityStorageRecordFromState(snapshot,securitySession._ledgerKey);
+        localStorage.setItem(LSKEY,raw);
+        this.lockedRecord=securityStorageRead(raw)||this.lockedRecord;
+        this.lastSaveOk=true;
+      }catch(e){ this.lastSaveOk=false }
+      this.saving=false; updateSaveBadge();
+      return this.lastSaveOk;
+    });
+    return this._saveChain;
   },
-  load(){ if(!this.ok) return null; try{ const s = localStorage.getItem(LSKEY); return s? JSON.parse(s): null }catch(e){ return null } }
+  flush(){ return this._saveChain },
+  relock(){
+    if(!this.ok){this.lockedRecord=null;return}
+    try{this.lockedRecord=securityStorageRead(localStorage.getItem(LSKEY))}catch(e){this.lockedRecord=null}
+  },
+  load(){
+    if(!this.ok) return null;
+    try{
+      const raw=localStorage.getItem(LSKEY);
+      if(!raw) return null;
+      const locked=securityStorageRead(raw);
+      if(locked){ this.lockedRecord=locked; return {__locked:true,security:securityStorageHeaderToConfig(locked.security)} }
+      this.lockedRecord=null;
+      return JSON.parse(raw);
+    }catch(e){ return null }
+  }
 };
 function freshState(){
   return {
@@ -26,6 +63,7 @@ function freshState(){
       nisPct:5.4, nisCeilingMonthly:13600, healthSurchargeWeekly:8.25, payrollDeductionPct:0,
       savingsTargetPct:10, emergencyMonths:4, businessMarginPct:35, minWageHourly:20.50 },
     streams:[], recurringExpenses:[], tx:[], budgets:{}, household:{members:[]}, projects:[],
+    security:securityNewConfig(),
     meta:{ created:Date.now(), sample:false, init:true, name:'', nameCustom:false, privacySeen:false }
   };
 }
@@ -45,6 +83,16 @@ function migrateWorkspace(s){
   if(!Array.isArray(s.household?.members)) s.household={members:[]};
   if(!Array.isArray(s.projects)) s.projects=[];
   if(!Array.isArray(s.recurringExpenses)) s.recurringExpenses=[];
+  if(!s.security || typeof s.security!=='object') s.security=securityNewConfig();
+  if(!Array.isArray(s.security.profiles)) s.security.profiles=[];
+  if(!s.security.policy || typeof s.security.policy!=='object') s.security.policy={guestEnabled:true,autoLockMinutes:15};
+  if(s.security.adminVerifier===undefined) s.security.adminVerifier=null;
+  if(s.security.protectedEnvelope===undefined) s.security.protectedEnvelope=null;
+  if(s.security.ledgerKeySalt===undefined) s.security.ledgerKeySalt=null;
+  if(s.security.ledgerKeyIterations===undefined) s.security.ledgerKeyIterations=SECURITY.iterations;
+  if(s.security.storageProtected===undefined) s.security.storageProtected=false;
+  if(s.security.legacyProtectionPending===undefined) s.security.legacyProtectionPending=!!s.security.enabled&&!s.security.storageProtected;
+  if(s.security.schemaVersion===undefined) s.security.schemaVersion=1;
   /* workspace naming (1.4.2): a save with no meta.name is an EXISTING install, so
      default nameCustom to true — the user's ledger is theirs and we must not start
      overwriting it with a name derived from their household later. Newly created
@@ -64,6 +112,23 @@ function migrateWorkspace(s){
     if(p.completedAt===undefined) p.completedAt = p.archived? (p.targetDate||p.startDate||null) : null;
     if(!p.fundingPlan) p.fundingPlan={enabled:false,startingReserve:0,oneTimeContribution:0,surplusAllocationPct:0,fixedMonthlyContribution:0};
   }
+  return s;
+}
+function normalizeCashflowContext(t){
+  if(!t || typeof t!=='object') return t;
+  const valid=(list,v)=>list.some(x=>x.id===v);
+  if(!valid(EMPLOYMENT_CONTEXT,t.employmentContext)) t.employmentContext='unknown';
+  if(!valid(SEASONAL_CONTEXT,t.seasonalContext)) t.seasonalContext='unknown';
+  if(!valid(TRANSFER_PURPOSES,t.transferPurpose)) t.transferPurpose='unknown';
+  if(!valid(CASHFLOW_CONTEXT,t.cashflowContext)) t.cashflowContext='ordinary';
+  if(!valid(PROVENANCE_STATES,t.provenance)) t.provenance='reported';
+  if(t.cashflowContext==='foreign_remittance' && t.cat==='income' && !t.incomeType) t.incomeType='gift_remittance';
+  return t;
+}
+function migrateCashflowContext(s){
+  if(!s || typeof s!=='object') return s;
+  if(!Array.isArray(s.tx)) s.tx=[];
+  for(const t of s.tx) normalizeCashflowContext(t);
   return s;
 }
 function migrateIncomeTypes(s){
@@ -243,12 +308,10 @@ function setLedgerName(v){
 function renameLedger(){ const i=$('ledgerNameInput'); if(i) setLedgerName(i.value) }
 
 /* ----------------------------------------------------------------
-   PRIVACY & DATA NOTICE  (1.4.2)
-   There is no login, no account and no encryption in LifeLedger, so
-   there can be no "logon reminder". This says only what is true:
-   the data is local, it is NOT encrypted, and a backup file is a
-   plain-text copy. Claiming protection the app does not provide
-   would be worse than saying nothing at all.
+   PRIVACY & DATA NOTICE
+   Legacy saves remain local and may still be plaintext until the user
+   enables the new local-account security model. The notice is explicit
+   about which layer is protected and which legacy data is not.
 ---------------------------------------------------------------- */
 function showPrivacyNotice(){
   if($('privacyModal')) return;
@@ -261,10 +324,11 @@ function showPrivacyNotice(){
     <h2 style="margin:0 0 4px;font-size:19px">Your data &amp; your privacy</h2>
     <p class="mut small" style="margin:0 0 14px">How <b>${esc(ledgerName())}</b> is stored — stated plainly, including what is <b>not</b> protected.</p>
     <div style="font-size:13.3px;line-height:1.65">
-      <p style="margin:0 0 8px"><b>✓ It stays on this device.</b> Everything lives in this browser's local storage for this app only. There is no server, no account, no sync and no tracking — LifeLedger never sends your figures anywhere.</p>
-      <p style="margin:0 0 8px;background:#fdf3e4;border:1px solid #f2d3a2;border-radius:8px;padding:10px 12px"><b>⚠ It is not encrypted.</b> Your entries are stored as readable text, as are the JSON backup files you export. There is no password protecting them.</p>
-      <p style="margin:0 0 8px"><b>Who can read it:</b> anyone who can use this device or sign in to this computer account, anyone using this browser profile, and anyone you send a backup file to. On a shared or work computer, treat it as legible to others.</p>
-      <p style="margin:0 0 8px"><b>Protect it yourself:</b> keep this device and computer account locked, use a separate browser profile for finances, and store backups somewhere you control. If you need at-rest secrecy, put the backup inside an encrypted volume or password-protected archive — the app cannot do it for you.</p>
+      <p style="margin:0 0 8px"><b>✓ It stays on this device.</b> LifeLedger remains local-first: there is no required cloud account, sync service or server storing your figures.</p>
+      <p style="margin:0 0 8px;background:#edf7ef;border:1px solid #b9dfc0;border-radius:8px;padding:10px 12px"><b>🔐 With a local account:</b> ordinary budgeting uses your login; private high-value details are stored in a separate authenticated encrypted envelope and require the Admin key to reveal.</p>
+      <p style="margin:0 0 8px;background:#fdf3e4;border:1px solid #f2d3a2;border-radius:8px;padding:10px 12px"><b>⚠ Legacy financial fields:</b> existing 1.4.x ledger data remains local and is not retroactively encrypted simply by installing this version. Use Account to enable protection during the migration process.</p>
+      <p style="margin:0 0 8px"><b>Who can read what:</b> Guest cannot open the household UI. A signed-in user can use normal budgeting. Protected details require the separate Admin key. Anyone with control of the unlocked operating system remains outside the app's threat boundary.</p>
+      <p style="margin:0 0 8px"><b>Backups:</b> plain JSON/CSV exports remain readable copies. Use an encrypted backup when that workflow is available, and store any export somewhere you control.</p>
       <p style="margin:0 0 2px"><b>Clearing browser data, uninstalling, or “Reset everything” deletes the ledger permanently.</b> Nothing can recover it. Export a JSON backup first.</p>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
@@ -289,6 +353,7 @@ function maybeShowPrivacyNotice(){
    than stacked on top of it. */
 function bootNotices(){
   if(!store.ok){ showStorageWarning(); return }
+  if(typeof securityBoot==='function'){ securityBoot(); return }
   maybeShowPrivacyNotice();
 }
 

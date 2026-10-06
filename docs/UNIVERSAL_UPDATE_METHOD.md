@@ -1,6 +1,6 @@
 # LifeLedger Universal Update Method
 
-Status: PREPARED — GitHub repository not yet connected
+Status: ACTIVE — GitHub repository `hayden2585-sudo/LifeLedger` is the canonical application source and release store
 
 ## Purpose
 
@@ -50,7 +50,7 @@ Every release should publish:
 - Android APK when the native Capacitor project is present
 - SHA-256 checksum manifest
 
-Artifact names should contain the exact semantic version, for example `LifeLedger Setup 1.3.0.exe`.
+Artifact names should contain the exact semantic version, for example `LifeLedger Setup 1.5.0.exe`.
 
 ## Windows update method
 
@@ -86,7 +86,13 @@ Rollback means selecting a previous GitHub Release/tag and installing that exact
 
 ## Security progression
 
-Initial implementation can use GitHub Releases + SHA-256 verification. The mature version should add code signing for Windows/macOS/Android artifacts and require the update client to reject unsigned or checksum-mismatched artifacts.
+Application distribution integrity and user-data security are separate concerns.
+
+Current distribution layer: GitHub Releases + SHA-256 verification; code signing remains a maturity target for Windows/macOS/Android artifacts.
+
+Current application-data layer: local account access, Guest mode, Admin step-up, whole-ledger authenticated encryption at rest, explicit legacy-data migration, encrypted backup/restore, and a second encrypted envelope for restricted private records.
+
+Next data-security layers: protected-export enforcement, richer per-user permissions, recovery/key-reset controls, and further platform hardening. Checksums and code signing must never be described as protection for user financial data.
 
 ## Repository setup — one time
 

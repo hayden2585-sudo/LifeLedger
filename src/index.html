@@ -14,6 +14,7 @@
   </div>
   <div class="top-actions">
     <span id="saveBadge" class="badge">…</span>
+    <button id="securityButton" type="button" class="badge" onclick="securityAccountMenu()" title="Account & protected data">👤 Guest</button>
     <span class="naming">
       <input type="text" id="ledgerNameInput" maxlength="60" placeholder="Ledger name"
              title="Name this ledger — used for its title and its export filenames"
@@ -28,9 +29,12 @@
         <button onclick="exportCSV()">⬇️ Export transactions (CSV)</button>
         <button onclick="exportGridCSV()">⬇️ Export annual grid (CSV)</button>
         <button onclick="exportJSON()">⬇️ Export backup (JSON)</button>
+        <button onclick="securityShowEncryptedBackup()">🔐 Export encrypted backup</button>
         <button onclick="importJSONClick()">⬆️ Import backup (JSON)</button>
+        <button onclick="securityChooseEncryptedRestore()">🔐 Restore encrypted backup</button>
         <hr>
         <button onclick="closeMenu();showPrivacyNotice()">🔒 Privacy &amp; data — how this is stored</button>
+        <button onclick="closeMenu();showHighImpactNotice()">⚠️ Tax / audit / high-impact use notice</button>
         <hr>
         <button onclick="loadSample()">🎲 Load sample data</button>
         <button onclick="clearSample()">🧹 Clear sample data</button>
@@ -65,10 +69,12 @@
   <section id="v-plan" class="view"></section>
   <section id="v-ingest" class="view"></section>
 </main>
-<footer>LifeLedger · all data stays in your browser (local storage) · educational tool — not financial or tax advice</footer>
+<footer>LifeLedger · local-first recordkeeping &amp; analysis · not tax, accounting, legal, audit, financial, or regulatory advice · verify consequential outputs independently</footer>
 <div id="toast" class="toast"></div>
 
 <script src="js/01-core.js"></script>
+<script src="js/17-security.js"></script>
+<script src="js/18-secure-storage.js"></script>
 <script src="js/02-state.js"></script>
 <script src="js/03-sample.js"></script>
 <script src="js/04-charts.js"></script>

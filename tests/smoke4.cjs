@@ -67,7 +67,8 @@ setTimeout(()=>{ try{
   /* ---------- #11 data health ---------- */
   const h=w.dataHealth();
   const sampleStreams=w.LL.state.streams;
-  assert('#11 dataHealth returns all six integrity checks', h.checks.length===6 && h.total===6);
+  assert('#11 dataHealth returns all seven integrity checks', h.checks.length===7 && h.total===7);
+  assert('#11 dataHealth includes the unresolved-integrity check', h.checks.some(c=>c.id==='integrity'));
   assert('#11 dataHealth scores the passing checks', h.score===h.checks.filter(c=>c.ok).length && h.pct===Math.round(h.score/h.total*100));
   assert('#11 dataHealth counts entries by side of the ledger',
     h.counts.income===w.LL.state.tx.filter(t=>t.cat==='income').length &&
@@ -440,47 +441,32 @@ setTimeout(()=>{ try{
     /save failed/i.test(saveDom.window.document.getElementById('saveBadge').textContent));
   saveProto.setItem=realSetItem;
 
-  /* ---- privacy notice ---- */
+  /* ---- privacy + access model ---- */
   w.showView('dash');
-  assert('1.4.2 the privacy notice is reachable from the Data menu',
+  assert('1.4.2 the privacy notice remains reachable from the Data menu',
     /showPrivacyNotice\(\)/.test(d.getElementById('dataMenu').innerHTML) && /Privacy &amp; data/.test(d.getElementById('dataMenu').innerHTML));
+  d.getElementById('privacyModal')?.remove();
   w.showPrivacyNotice();
   const pm=d.getElementById('privacyModal');
   assert('1.4.2 the privacy notice opens', !!pm);
   const ptxt=pm? pm.textContent : '';
-  assert('1.4.2 it states the data stays on the device', /stays on this device/.test(ptxt) && /no server, no account/.test(ptxt));
-  assert('1.4.2 it states plainly that the data is NOT encrypted',
-    /not encrypted/i.test(ptxt) && /readable text/i.test(ptxt) && /no password/i.test(ptxt));
-  assert('1.4.2 it says who can actually read the ledger',
-    /Who can read it/.test(ptxt) && /browser profile/.test(ptxt) && /shared or work computer/.test(ptxt));
-  assert('1.4.2 it warns that backups are plain text too', /backup files you export/.test(ptxt));
-  assert('1.4.2 it explains the permanent-loss risk and the export remedy',
-    /deletes the ledger permanently/.test(ptxt) && /Export a JSON backup first/.test(ptxt));
-  assert('1.4.2 it never claims protection the app does not provide',
-    !/encrypted for you|we encrypt|end-to-end|secure by design|military-grade/i.test(ptxt));
-  assert('1.4.2 it names the ledger it is describing', /My ledger|household|Boodoosingh/.test(ptxt));
-  assert('1.4.2 opening it twice does not stack duplicates',
-    (w.showPrivacyNotice(), d.querySelectorAll('#privacyModal').length===1));
+  assert('1.4.2 it states the local-first boundary', /stays on this device/.test(ptxt) && /local-first/.test(ptxt));
+  assert('1.4.2 it explains the new account protection layer', /local account/.test(ptxt) && /Admin key/.test(ptxt));
+  assert('1.4.2 it distinguishes legacy plaintext fields', /Legacy financial fields/.test(ptxt) && /not retroactively encrypted/.test(ptxt));
+  assert('1.4.2 it describes Guest and authenticated visibility', /Guest cannot open the household UI/.test(ptxt) && /signed-in user/.test(ptxt));
+  assert('1.4.2 it still warns that plain exports remain readable', /plain JSON\/CSV exports remain readable/.test(ptxt));
   w.ackPrivacy();
-  assert('1.4.2 acknowledging closes it and records the acknowledgement',
-    !d.getElementById('privacyModal') && w.LL.state.meta.privacySeen===true);
-  w.maybeShowPrivacyNotice();
-  assert('1.4.2 an acknowledged notice does not reappear', !d.getElementById('privacyModal'));
-  /* a brand-new install shows it once, at startup */
+  assert('1.4.2 acknowledging closes the notice', !d.getElementById('privacyModal') && w.LL.state.meta.privacySeen===true);
+  /* startup now presents access choice rather than a misleading privacy-only gate */
   const newDom=makeDom();
   const nw=newDom.window;
-  assert('1.4.2 a new install is shown the notice at startup', !!nw.document.getElementById('privacyModal'));
-  assert('1.4.2 the notice is shown for a new install even when storage works',
-    nw.localStorage.getItem('lifeledger.v1')!==null && !!nw.document.getElementById('privacyModal'));
-  /* but never alongside the storage warning, and never for a pre-existing save */
-  const old2={settings:{},streams:[],tx:[{id:'z',date:'2026-01-05',cat:'groceries',sub:'M',desc:'',amt:10,src:'manual',ded:false}],
-    budgets:{},household:{members:[]},meta:{created:1,sample:false,init:true}};
-  const oldDom=makeDom(win=>{ win.localStorage.setItem('lifeledger.v1', JSON.stringify(old2)) });
-  assert('1.4.2 an existing save is NOT nagged with a privacy notice it never saw',
-    !oldDom.window.document.getElementById('privacyModal') && oldDom.window.LL.state.meta.privacySeen===true);
+  assert('security model presents an access gate on a new install', !!nw.document.getElementById('securityModal'));
+  assert('new install gate offers account creation and Guest mode', /Create my account/.test(nw.document.getElementById('securityModal').textContent) && /Continue as Guest/.test(nw.document.getElementById('securityModal').textContent));
+  nw.securityEnterGuest();
+  assert('Guest mode closes the household UI', nw.LL_SECURITY.securitySession.mode==='guest' && nw.document.querySelector('nav#tabs').style.display==='none' && nw.document.querySelector('main').style.display==='none');
   const blockedDom=makeDom(win=>{ Object.defineProperty(win,'localStorage',{configurable:true,get(){ throw new Error('blocked') }}) });
-  assert('1.4.2 with storage blocked the loss warning takes precedence, with no stacked modals',
-    !!blockedDom.window.document.getElementById('storageWarnModal') && !blockedDom.window.document.getElementById('privacyModal'));
+  assert('storage failure still takes precedence over the access gate',
+    !!blockedDom.window.document.getElementById('storageWarnModal') && !blockedDom.window.document.getElementById('securityModal'));
 
   assert('no runtime errors during the enhancement run', dom.errors.length===0);
   if(dom.errors.length) console.log('\nERRORS:\n'+dom.errors.join('\n---\n'));

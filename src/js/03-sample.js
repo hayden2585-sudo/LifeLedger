@@ -85,6 +85,14 @@ function buildSample(){
     if(t.cat==='upkeep'){ t.projectId=roofId; t.projectItemId=(Math.random()<0.5?roofItemA:roofItemB); continue }
     if(['dining','toiletries','transport','parties'].includes(t.cat)) t.memberId=p2.id;
   }
+  /* Keep the demonstration deterministic: the project archive/actuals checks need
+     at least one genuine project-linked cost even when the randomized upkeep branch
+     above produces zero rows. */
+  if(!tx.some(t=>t.projectId)){
+    const base=new Date(now.getFullYear(),now.getMonth(),6);
+    tx.push({id:uid()+('s'+(n++)),date:iso(base),cat:'upkeep',sub:'Sample project cost',desc:'Bathroom refurbishment sample cost',
+      amt:650,src:'sample',ded:false,projectId:roofId,projectItemId:roofItemA});
+  }
   const budgets={ loans:5250, groceries:1750, utilities:1150, auto:700, insurance:900, transport:260, dining:620,
     toiletries:220, subscriptions:185, entertainment:580, parties:420, education:200, medical:220, upkeep:260, savings:600, taxes:80, income:0 };
   const streams=[ {id:salaryStreamId,label:'Salary (net take-home)',monthly:14456,memberId:p1.id,incomeType:'salary'},

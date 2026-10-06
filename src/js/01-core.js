@@ -59,6 +59,87 @@ const INCOME_TYPES = [
   {id:'other_income',  name:'Other income',            icon:'💵', kind:'other'}
 ];
 const INCOME_TYPE = Object.fromEntries(INCOME_TYPES.map(x=>[x.id,x]));
+
+/* ---------------- contextual cashflow metadata ----------------
+   These fields describe why a transaction may look unusual without treating
+   unusual employment, seasonality, legal gaming, rotating savings, or family
+   support as evidence of wrongdoing. Context is evidence about a cashflow,
+   not a verdict about the person who entered it. */
+const EMPLOYMENT_CONTEXT = [
+  {id:'standard',name:'Standard employment'},
+  {id:'multiple_jobs',name:'Multiple jobs / income sources'},
+  {id:'seasonal_work',name:'Seasonal / temporary work'},
+  {id:'irregular_work',name:'Irregular / cash-heavy work'},
+  {id:'self_employed',name:'Self-employed / own business'},
+  {id:'temporary_zero_income',name:'Temporary zero-income period'},
+  {id:'unknown',name:'Not specified'}
+];
+const SEASONAL_CONTEXT = [
+  {id:'christmas_holiday',name:'Christmas / holiday period'},
+  {id:'carnival',name:'Carnival period'},
+  {id:'school_term',name:'School-term cycle'},
+  {id:'agriculture_harvest',name:'Agriculture / harvest cycle'},
+  {id:'tourism',name:'Tourism / travel cycle'},
+  {id:'annual_payment',name:'Annual / periodic payment'},
+  {id:'none',name:'No known seasonal context'},
+  {id:'unknown',name:'Not specified'}
+];
+const TRANSFER_PURPOSES = [
+  {id:'household_support',name:'Household support'},
+  {id:'child_education',name:'Child education / school'},
+  {id:'medical_support',name:'Medical / health support'},
+  {id:'housing_living',name:'Housing / living expenses'},
+  {id:'family_assistance',name:'Family assistance'},
+  {id:'personal_transfer',name:'Personal transfer'},
+  {id:'business_capital',name:'Business capital'},
+  {id:'business_operating',name:'Business operating expense'},
+  {id:'customer_payment',name:'Customer / client payment'},
+  {id:'investment_capital',name:'Investment / capital transfer'},
+  {id:'unknown',name:'Unknown / unclassified'}
+];
+const CASHFLOW_CONTEXT = [
+  {id:'ordinary',name:'Ordinary cashflow'},
+  {id:'legal_gaming',name:'Legal gaming / prize income'},
+  {id:'sou_sou_contribution',name:'Sou-sou contribution'},
+  {id:'sou_sou_payout',name:'Sou-sou payout'},
+  {id:'foreign_remittance',name:'Foreign remittance / transfer'},
+  {id:'unknown',name:'Not specified'}
+];
+const PROVENANCE_STATES = [
+  {id:'reported',name:'Reported'},
+  {id:'supported',name:'Supported'},
+  {id:'calculated',name:'Calculated'},
+  {id:'inferred',name:'Inferred'},
+  {id:'unverified',name:'Unverified'}
+];
+const pickContextLabel=(list,id)=>((list||[]).find(x=>x.id===id)||{name:'Not specified'}).name;
+function inferCashflowContext(text){
+  const s=' '+String(text||'').toLowerCase()+' ';
+  if(/sou[- ]?sou|sousou|rotating savings|rotating savings club/i.test(s)) return /payout|draw|received|collection/i.test(s)?'sou_sou_payout':'sou_sou_contribution';
+  if(/nlcb|play\s*whe|lotto|lottery|gaming\s*prize|prize\s*money|winning\s*ticket/i.test(s)) return 'legal_gaming';
+  if(/remittance|money\s+from\s+(family|relative|relatives|overseas)|support\s+from\s+abroad|overseas\s+transfer|international\s+transfer/i.test(s)) return 'foreign_remittance';
+  return 'ordinary';
+}
+function inferTransferPurpose(text){
+  const s=' '+String(text||'').toLowerCase()+' ';
+  if(/school|tuition|fees|textbook|uniform|child|children|education/i.test(s)) return 'child_education';
+  if(/medical|doctor|hospital|clinic|medicine|pharmacy/i.test(s)) return 'medical_support';
+  if(/business|stock|inventory|equipment|shop|store|capital/i.test(s)) return /capital|start|launch|fund/i.test(s)?'business_capital':'business_operating';
+  if(/rent|mortgage|house|home|living|household|grocery|food/i.test(s)) return 'housing_living';
+  if(/family|relative|parent|sibling|support/i.test(s)) return 'family_assistance';
+  return 'unknown';
+}
+function contextualFlags(t){
+  const flags=[]; if(!t||typeof t!=='object') return flags;
+  const text=(t.sub||'')+' '+(t.desc||'')+' '+(t.vendor||'');
+  const ctx=t.cashflowContext||inferCashflowContext(text);
+  if(ctx==='legal_gaming') flags.push({id:'legal-gaming-context',severity:'info',message:'Gaming/prize cashflow — verify the source and retain supporting records if consequential.'});
+  if(ctx==='sou_sou_contribution') flags.push({id:'sou-sou-contribution',severity:'info',message:'Sou-sou contribution — treat as rotating savings activity, not ordinary household spending.'});
+  if(ctx==='sou_sou_payout') flags.push({id:'sou-sou-payout',severity:'info',message:'Sou-sou payout — do not automatically treat the payout as new household income.'});
+  if(ctx==='foreign_remittance' && (t.transferPurpose||'unknown')==='unknown') flags.push({id:'remittance-purpose',severity:'review',message:'Foreign transfer purpose is unclassified; distinguish household/education support from business activity.'});
+  return flags;
+}
+
 const INCOME_STREAM_TYPES = INCOME_TYPES.filter(x=>['recurring','investment','property'].includes(x.kind));
 function incomeTypeOptions(sel, streamOnly=false){
   const xs=streamOnly?INCOME_STREAM_TYPES:INCOME_TYPES;

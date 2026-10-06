@@ -2,6 +2,27 @@
    EXPORT / IMPORT / MENU / ROUTER / BOOT
    ================================================================ */
 
+/* ================================================================
+   HIGH-IMPACT USE NOTICE
+   This is a product limitation notice, not a claim that the user is
+   truthful or that LifeLedger has certified the underlying records.
+   ================================================================ */
+function showHighImpactNotice(){
+  if($('highImpactModal')) return;
+  const h=document.createElement('div'); h.id='highImpactModal';
+  h.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.7);z-index:310;display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto';
+  h.innerHTML=`<div style="background:#fff;border-radius:14px;padding:26px;max-width:640px;box-shadow:0 20px 50px rgba(0,0,0,.3)">
+    <div style="font-size:30px">⚠️</div>
+    <h2 style="margin:6px 0 10px">Tax, audit &amp; other high-impact use</h2>
+    <p style="font-size:13.5px;line-height:1.65"><b>Data Integrity Notice:</b> LifeLedger provides recordkeeping, calculations and analytical estimates from information entered or imported by the user. It does not independently establish that those records are truthful, complete, authentic, or legally sufficient.</p>
+    <p style="font-size:13.5px;line-height:1.65">Incorrect, incomplete, estimated, misleading, or intentionally false information can produce materially inaccurate findings. Some unusual values may pass plausibility thresholds, so a “clean” result is not a certification of truth.</p>
+    <p style="font-size:13.5px;line-height:1.65"><b>Do not rely on LifeLedger alone</b> for tax filings, audits, regulatory submissions, legal matters, financial decisions, or other consequential purposes. Review the underlying records and obtain qualified professional advice where appropriate.</p>
+    <div style="background:#fdf3e4;border:1px solid #f2d3a2;border-radius:8px;padding:10px 12px;font-size:12.5px;line-height:1.55"><b>System safeguard:</b> unresolved data-integrity flags reduce LifeLedger's data-health score. Corrected records are marked as corrected rather than silently rewritten.</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:16px"><button class="btn" onclick="document.getElementById('highImpactModal').remove()">I understand</button></div>
+  </div>`;
+  document.body.appendChild(h);
+}
+
 /* ----------------------------------------------------------------
    IMPROVEMENT 5 — Full CSV export including all attribution fields
    Original export lost: household_member, project, project_item,
@@ -90,16 +111,23 @@ function importJSONClick(){ closeMenu(); $('jsonFile').click() }
 function importJSONFile(input){
   const f=input.files[0]; if(!f) return;
   const r=new FileReader();
-  r.onload=()=>{
+  r.onload=async()=>{
     try{
       const p=JSON.parse(r.result);
+      if(p?.format===SECURE_STORAGE.backupFormat){ securityShowEncryptedRestorePrompt(p); return }
       if(!p||!Array.isArray(p.tx)) throw new Error('bad format');
-      const base=freshState();
-      state={...base, ...p, settings:migrateSettings(Object.assign({}, p.settings||{})), meta:{...base.meta, ...(p.meta||{}), init:true}};
+      if(securityEnabled()&&!securityIsNormal()) throw new Error('sign in first');
+      const base=freshState(), localSecurity=securityEnabled()?JSON.parse(JSON.stringify(state.security)):null;
+      state={...base,...p,settings:migrateSettings(Object.assign({},p.settings||{})),meta:{...base.meta,...(p.meta||{}),init:true}};
+      if(localSecurity) state.security=localSecurity;
       migrateIncomeTypes(state); migrateWorkspace(state);
-      store.save(); bootTimeDefaults(); renderAll(); toast('Backup restored — '+p.tx.length+' entries');
-    }catch(e){ toast('That file is not a valid LifeLedger backup') }
-    input.value='';
+      if(localSecurity){ state.security.storageProtected=true; state.security.legacyProtectionPending=false }
+      const ok=await store.save();
+      if(!ok) throw new Error('save failed');
+      if(localSecurity) store.relock();
+      bootTimeDefaults(); renderAll(); toast('Backup restored — '+p.tx.length+' entries');
+    }catch(e){ toast(e.message==='sign in first'?'Sign in before restoring a plain JSON backup':'That file is not a valid LifeLedger backup') }
+    finally{ input.value='' }
   };
   r.readAsText(f);
 }

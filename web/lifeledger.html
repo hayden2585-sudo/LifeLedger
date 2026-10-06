@@ -180,6 +180,7 @@ footer{max-width:1320px;margin:0 auto;padding:14px 16px 30px;color:var(--mut);fo
   </div>
   <div class="top-actions">
     <span id="saveBadge" class="badge">…</span>
+    <button id="securityButton" type="button" class="badge" onclick="securityAccountMenu()" title="Account & protected data">👤 Guest</button>
     <span class="naming">
       <input type="text" id="ledgerNameInput" maxlength="60" placeholder="Ledger name"
              title="Name this ledger — used for its title and its export filenames"
@@ -194,9 +195,12 @@ footer{max-width:1320px;margin:0 auto;padding:14px 16px 30px;color:var(--mut);fo
         <button onclick="exportCSV()">⬇️ Export transactions (CSV)</button>
         <button onclick="exportGridCSV()">⬇️ Export annual grid (CSV)</button>
         <button onclick="exportJSON()">⬇️ Export backup (JSON)</button>
+        <button onclick="securityShowEncryptedBackup()">🔐 Export encrypted backup</button>
         <button onclick="importJSONClick()">⬆️ Import backup (JSON)</button>
+        <button onclick="securityChooseEncryptedRestore()">🔐 Restore encrypted backup</button>
         <hr>
         <button onclick="closeMenu();showPrivacyNotice()">🔒 Privacy &amp; data — how this is stored</button>
+        <button onclick="closeMenu();showHighImpactNotice()">⚠️ Tax / audit / high-impact use notice</button>
         <hr>
         <button onclick="loadSample()">🎲 Load sample data</button>
         <button onclick="clearSample()">🧹 Clear sample data</button>
@@ -231,7 +235,7 @@ footer{max-width:1320px;margin:0 auto;padding:14px 16px 30px;color:var(--mut);fo
   <section id="v-plan" class="view"></section>
   <section id="v-ingest" class="view"></section>
 </main>
-<footer>LifeLedger · all data stays in your browser (local storage) · educational tool — not financial or tax advice</footer>
+<footer>LifeLedger · local-first recordkeeping &amp; analysis · not tax, accounting, legal, audit, financial, or regulatory advice · verify consequential outputs independently</footer>
 <div id="toast" class="toast"></div>
 
 <script>
@@ -296,6 +300,87 @@ const INCOME_TYPES = [
   {id:'other_income',  name:'Other income',            icon:'💵', kind:'other'}
 ];
 const INCOME_TYPE = Object.fromEntries(INCOME_TYPES.map(x=>[x.id,x]));
+
+/* ---------------- contextual cashflow metadata ----------------
+   These fields describe why a transaction may look unusual without treating
+   unusual employment, seasonality, legal gaming, rotating savings, or family
+   support as evidence of wrongdoing. Context is evidence about a cashflow,
+   not a verdict about the person who entered it. */
+const EMPLOYMENT_CONTEXT = [
+  {id:'standard',name:'Standard employment'},
+  {id:'multiple_jobs',name:'Multiple jobs / income sources'},
+  {id:'seasonal_work',name:'Seasonal / temporary work'},
+  {id:'irregular_work',name:'Irregular / cash-heavy work'},
+  {id:'self_employed',name:'Self-employed / own business'},
+  {id:'temporary_zero_income',name:'Temporary zero-income period'},
+  {id:'unknown',name:'Not specified'}
+];
+const SEASONAL_CONTEXT = [
+  {id:'christmas_holiday',name:'Christmas / holiday period'},
+  {id:'carnival',name:'Carnival period'},
+  {id:'school_term',name:'School-term cycle'},
+  {id:'agriculture_harvest',name:'Agriculture / harvest cycle'},
+  {id:'tourism',name:'Tourism / travel cycle'},
+  {id:'annual_payment',name:'Annual / periodic payment'},
+  {id:'none',name:'No known seasonal context'},
+  {id:'unknown',name:'Not specified'}
+];
+const TRANSFER_PURPOSES = [
+  {id:'household_support',name:'Household support'},
+  {id:'child_education',name:'Child education / school'},
+  {id:'medical_support',name:'Medical / health support'},
+  {id:'housing_living',name:'Housing / living expenses'},
+  {id:'family_assistance',name:'Family assistance'},
+  {id:'personal_transfer',name:'Personal transfer'},
+  {id:'business_capital',name:'Business capital'},
+  {id:'business_operating',name:'Business operating expense'},
+  {id:'customer_payment',name:'Customer / client payment'},
+  {id:'investment_capital',name:'Investment / capital transfer'},
+  {id:'unknown',name:'Unknown / unclassified'}
+];
+const CASHFLOW_CONTEXT = [
+  {id:'ordinary',name:'Ordinary cashflow'},
+  {id:'legal_gaming',name:'Legal gaming / prize income'},
+  {id:'sou_sou_contribution',name:'Sou-sou contribution'},
+  {id:'sou_sou_payout',name:'Sou-sou payout'},
+  {id:'foreign_remittance',name:'Foreign remittance / transfer'},
+  {id:'unknown',name:'Not specified'}
+];
+const PROVENANCE_STATES = [
+  {id:'reported',name:'Reported'},
+  {id:'supported',name:'Supported'},
+  {id:'calculated',name:'Calculated'},
+  {id:'inferred',name:'Inferred'},
+  {id:'unverified',name:'Unverified'}
+];
+const pickContextLabel=(list,id)=>((list||[]).find(x=>x.id===id)||{name:'Not specified'}).name;
+function inferCashflowContext(text){
+  const s=' '+String(text||'').toLowerCase()+' ';
+  if(/sou[- ]?sou|sousou|rotating savings|rotating savings club/i.test(s)) return /payout|draw|received|collection/i.test(s)?'sou_sou_payout':'sou_sou_contribution';
+  if(/nlcb|play\s*whe|lotto|lottery|gaming\s*prize|prize\s*money|winning\s*ticket/i.test(s)) return 'legal_gaming';
+  if(/remittance|money\s+from\s+(family|relative|relatives|overseas)|support\s+from\s+abroad|overseas\s+transfer|international\s+transfer/i.test(s)) return 'foreign_remittance';
+  return 'ordinary';
+}
+function inferTransferPurpose(text){
+  const s=' '+String(text||'').toLowerCase()+' ';
+  if(/school|tuition|fees|textbook|uniform|child|children|education/i.test(s)) return 'child_education';
+  if(/medical|doctor|hospital|clinic|medicine|pharmacy/i.test(s)) return 'medical_support';
+  if(/business|stock|inventory|equipment|shop|store|capital/i.test(s)) return /capital|start|launch|fund/i.test(s)?'business_capital':'business_operating';
+  if(/rent|mortgage|house|home|living|household|grocery|food/i.test(s)) return 'housing_living';
+  if(/family|relative|parent|sibling|support/i.test(s)) return 'family_assistance';
+  return 'unknown';
+}
+function contextualFlags(t){
+  const flags=[]; if(!t||typeof t!=='object') return flags;
+  const text=(t.sub||'')+' '+(t.desc||'')+' '+(t.vendor||'');
+  const ctx=t.cashflowContext||inferCashflowContext(text);
+  if(ctx==='legal_gaming') flags.push({id:'legal-gaming-context',severity:'info',message:'Gaming/prize cashflow — verify the source and retain supporting records if consequential.'});
+  if(ctx==='sou_sou_contribution') flags.push({id:'sou-sou-contribution',severity:'info',message:'Sou-sou contribution — treat as rotating savings activity, not ordinary household spending.'});
+  if(ctx==='sou_sou_payout') flags.push({id:'sou-sou-payout',severity:'info',message:'Sou-sou payout — do not automatically treat the payout as new household income.'});
+  if(ctx==='foreign_remittance' && (t.transferPurpose||'unknown')==='unknown') flags.push({id:'remittance-purpose',severity:'review',message:'Foreign transfer purpose is unclassified; distinguish household/education support from business activity.'});
+  return flags;
+}
+
 const INCOME_STREAM_TYPES = INCOME_TYPES.filter(x=>['recurring','investment','property'].includes(x.kind));
 function incomeTypeOptions(sel, streamOnly=false){
   const xs=streamOnly?INCOME_STREAM_TYPES:INCOME_TYPES;
@@ -360,19 +445,277 @@ const GENERIC_HINTS = [
   [/saving|invest|deposit to savings/i,'savings']
 ];
 
+/* ================================================================
+   SECURITY FOUNDATION + LOCAL ACCESS UX
+   Ordinary use: local account. Sensitive view: admin step-up.
+   Guest never receives the household UI.
+   ================================================================ */
+const SECURITY = Object.freeze({
+  schemaVersion:1,
+  kdf:'PBKDF2-HMAC-SHA256',
+  iterations:600000,
+  keyBits:256,
+  cipher:'AES-GCM',
+  ivBytes:12,
+  saltBytes:16,
+  modes:Object.freeze({guest:'guest',normal:'normal',admin:'admin'}),
+  classes:Object.freeze({normal:'normal',protected:'protected',restricted:'restricted'})
+});
+const SECURITY_FIELD_CLASS=Object.freeze({
+  householdMemberName:'protected',householdMemberRole:'protected',incomeStreamLabel:'protected',incomeStreamMember:'protected',
+  transactionVendor:'protected',transactionDescription:'protected',transactionMember:'protected',projectName:'protected',projectNotes:'protected',
+  employerName:'restricted',bankAccountNumber:'restricted',taxIdentifier:'restricted',governmentIdentifier:'restricted',policyNumber:'restricted',credential:'restricted',recoveryCode:'restricted'
+});
+const securitySession={
+  mode:'guest',accountId:null,adminUnlockedUntil:0,protectedData:null,
+  _adminPass:null,_ledgerKey:null,_pendingBackup:null,_timer:null,
+  get adminUnlocked(){return Date.now()<this.adminUnlockedUntil},
+  lockAdmin(){if(this._timer){clearTimeout(this._timer);this._timer=null}this.adminUnlockedUntil=0;this.protectedData=null;this._adminPass=null}
+};
+function securityWebCrypto(){const c=globalThis.crypto;if(!c||!c.subtle||!c.getRandomValues)throw new Error('Web Crypto API unavailable');return c}
+function securityB64(bytes){let s='';const a=bytes instanceof Uint8Array?bytes:new Uint8Array(bytes);for(let i=0;i<a.length;i+=0x8000)s+=String.fromCharCode(...a.subarray(i,i+0x8000));return btoa(s)}
+function securityUnb64(s){const raw=atob(s),out=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);return out}
+function securityRandomB64(n=SECURITY.saltBytes){const a=new Uint8Array(n);securityWebCrypto().getRandomValues(a);return securityB64(a)}
+function securityBytesEqual(a,b){const x=a instanceof Uint8Array?a:new Uint8Array(a),y=b instanceof Uint8Array?b:new Uint8Array(b);let d=x.length^y.length;const n=Math.max(x.length,y.length);for(let i=0;i<n;i++)d|=(x[i%n]||0)^(y[i%n]||0);return d===0}
+async function securityDeriveBits(secret,saltB64,iterations=SECURITY.iterations){const c=securityWebCrypto(),enc=new TextEncoder();const base=await c.subtle.importKey('raw',enc.encode(String(secret)),'PBKDF2',false,['deriveBits','deriveKey']);return c.subtle.deriveBits({name:'PBKDF2',salt:securityUnb64(saltB64),iterations,hash:'SHA-256'},base,SECURITY.keyBits)}
+async function securityVerifier(secret,saltB64=securityRandomB64(),iterations=SECURITY.iterations){return {algorithm:SECURITY.kdf,iterations,salt:saltB64,verifier:securityB64(await securityDeriveBits(secret,saltB64,iterations))}}
+async function securityVerify(secret,record){if(!record||record.algorithm!==SECURITY.kdf||!record.salt||!record.verifier)return false;const got=new Uint8Array(await securityDeriveBits(secret,record.salt,+record.iterations||SECURITY.iterations));return securityBytesEqual(got,securityUnb64(record.verifier))}
+async function securityEncryptJson(value,passphrase,purpose='lifelledger-protected'){const c=securityWebCrypto(),enc=new TextEncoder(),salt=securityRandomB64(),iv=securityUnb64(securityRandomB64(SECURITY.ivBytes));const base=await c.subtle.importKey('raw',enc.encode(String(passphrase)),'PBKDF2',false,['deriveKey']);const key=await c.subtle.deriveKey({name:'PBKDF2',salt:securityUnb64(salt),iterations:SECURITY.iterations,hash:'SHA-256'},base,{name:'AES-GCM',length:SECURITY.keyBits},false,['encrypt']);const aad=enc.encode('LifeLedger:'+SECURITY.schemaVersion+':'+purpose),cipher=await c.subtle.encrypt({name:'AES-GCM',iv,additionalData:aad},key,enc.encode(JSON.stringify(value)));return {schemaVersion:SECURITY.schemaVersion,kdf:SECURITY.kdf,iterations:SECURITY.iterations,cipher:SECURITY.cipher,iv:securityB64(iv),salt,aad:purpose,ciphertext:securityB64(cipher)}}
+async function securityDecryptJson(envelope,passphrase,purpose=envelope?.aad||'lifelledger-protected'){if(!envelope||envelope.schemaVersion!==SECURITY.schemaVersion||envelope.kdf!==SECURITY.kdf||envelope.cipher!==SECURITY.cipher)throw new Error('Unsupported protected-data envelope');const c=securityWebCrypto(),enc=new TextEncoder(),base=await c.subtle.importKey('raw',enc.encode(String(passphrase)),'PBKDF2',false,['deriveKey']),key=await c.subtle.deriveKey({name:'PBKDF2',salt:securityUnb64(envelope.salt),iterations:+envelope.iterations||SECURITY.iterations,hash:'SHA-256'},base,{name:'AES-GCM',length:SECURITY.keyBits},false,['decrypt']);const aad=enc.encode('LifeLedger:'+SECURITY.schemaVersion+':'+purpose),plain=await c.subtle.decrypt({name:'AES-GCM',iv:securityUnb64(envelope.iv),additionalData:aad},key,securityUnb64(envelope.ciphertext));return JSON.parse(new TextDecoder().decode(plain))}
+function securityMask(value,kind='protected'){if(value===null||value===undefined||value==='')return '';if(kind==='restricted')return '••••••';const s=String(value);return s.length<=2?'••':s[0]+'•••'+s[s.length-1]}
+function securityClassification(field){return SECURITY_FIELD_CLASS[field]||'normal'}
+function securityNewConfig(){return {schemaVersion:1,enabled:false,profiles:[],adminVerifier:null,protectedEnvelope:null,ledgerKeySalt:null,ledgerKeyIterations:SECURITY.iterations,storageProtected:false,legacyProtectionPending:false,policy:{guestEnabled:true,autoLockMinutes:15}}}
+function securityNewProfile(displayName,verifier){return {id:(globalThis.crypto?.randomUUID?globalThis.crypto.randomUUID():Date.now().toString(36)),displayName:String(displayName||'User').trim().slice(0,60),role:'user',verifier}}
+function securityConfig(){if(!state.security)state.security=securityNewConfig();return state.security}
+function securityEnabled(){return !!securityConfig().enabled&&securityConfig().profiles.length>0}
+function securityPrimaryProfile(){return securityConfig().profiles[0]||null}
+function securityIsNormal(){return securitySession.mode==='normal'||securitySession.mode==='admin'}
+function securityCanViewProtected(){return securitySession.mode==='admin'&&securitySession.adminUnlocked}
+function securityAccountLabel(){if(securitySession.mode==='admin')return '🔓 Admin';if(securitySession.mode==='normal')return '👤 '+(securityPrimaryProfile()?.displayName||'User');return '👤 Guest'}
+function securityDisplay(value,kind='protected'){return securityCanViewProtected()?String(value??'') : securityMask(value,kind)}
+function securitySetAppVisibility(){const show=securityIsNormal();const nav=document.getElementById('tabs'),main=document.querySelector('main'),foot=document.querySelector('footer'),badge=document.getElementById('saveBadge'),nameWrap=document.querySelector('.naming'),currency=document.getElementById('currencySel'),menu=document.querySelector('.menu'),brand=document.getElementById('brandName'),tag=document.getElementById('brandTag');if(nav)nav.style.display=show?'flex':'none';if(main)main.style.display=show?'':'none';if(foot)foot.style.display=show?'':'none';if(badge)badge.style.display=show?'':'none';if(nameWrap)nameWrap.style.display=show?'':'none';if(currency)currency.style.display=show?'':'none';if(menu)menu.style.display=show?'':'none';if(brand)brand.textContent=show?ledgerName():'LifeLedger';if(tag)tag.textContent=show?(typeof ledgerNameIsCustom==='function'&&ledgerNameIsCustom()?'custom name · ✎ editable':'named from your household · ✎ to rename'):'Guest mode';const b=document.getElementById('securityButton');if(b){b.textContent=securityAccountLabel();b.className='badge'+(securitySession.mode==='admin'?' warn':'');b.title=securitySession.mode==='admin'?'Admin unlocked — click to lock or logout':securitySession.mode==='normal'?'Signed in — click for account options':'Guest mode — click to sign in'}}
+function securityOverlay(id,html){document.getElementById(id)?.remove();const m=document.createElement('div');m.id=id;m.setAttribute('role','dialog');m.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.88);z-index:500;display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto';m.innerHTML=`<div style="background:#fff;border-radius:16px;padding:26px;max-width:520px;width:100%;box-shadow:0 24px 80px rgba(0,0,0,.38)"></div>`;m.firstElementChild.innerHTML=html;document.body.appendChild(m);return m}
+function securityCloseOverlay(id='securityModal'){document.getElementById(id)?.remove()}
+function securityBoot(){securitySetAppVisibility();if(!securityEnabled()){securitySession.mode='guest';securityShowGate(true);return}securityShowLogin()}
+function securityRestoreButtonHTML(){return '<button class="btn ghost" type="button" onclick="securityChooseEncryptedRestore()">🔐 Restore encrypted backup</button>'}
+function securityShowGate(firstRun=false){securitySetAppVisibility();securityOverlay('securityModal',`<div style="font-size:34px">👋</div><h2 style="margin:8px 0">LifeLedger access</h2><p class="mut small">Choose how this device should open LifeLedger. Guest mode does not open household data.</p><div style="display:grid;gap:10px;margin-top:18px"><button class="btn" onclick="securityShowSetup()">${firstRun?'Create my account':'Create local account'}</button><button class="btn ghost" onclick="securityEnterGuest()">Continue as Guest</button>${securityRestoreButtonHTML()}</div><p class="hint" style="margin:14px 0 0">Guest mode is designed for demos and shared computers. Your household ledger stays behind the account.</p>`)}
+function securityShowSetup(){securityOverlay('securityModal',`<div style="font-size:34px">👤</div><h2 style="margin:8px 0">Create your local account</h2><p class="mut small">This account stays on this device. No email or cloud account is required.</p><form onsubmit="securityCreateAccount();return false"><label class="f">Your name</label><input id="secName" maxlength="60" placeholder="e.g. Richard" required><label class="f">Login passphrase</label><input id="secPass" type="password" minlength="8" autocomplete="new-password" placeholder="At least 8 characters" required><label class="f">Confirm login passphrase</label><input id="secPass2" type="password" minlength="8" autocomplete="new-password" required><hr style="border:0;border-top:1px solid var(--line);margin:16px 0"><label class="f">Admin key / passphrase</label><input id="secAdmin" type="password" minlength="10" autocomplete="new-password" placeholder="At least 10 characters" required><label class="f">Confirm admin key</label><input id="secAdmin2" type="password" minlength="10" autocomplete="new-password" required><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px"><button class="btn" type="submit">Create account</button><button class="btn ghost" type="button" onclick="securityShowGate(true)">Back</button></div></form><p class="hint">The normal login key will protect the whole ledger at rest. The separate Admin key opens only the highest-value private details.</p>`)}
+async function securityCreateAccount(){const name=document.getElementById('secName')?.value.trim(),p=document.getElementById('secPass')?.value||'',p2=document.getElementById('secPass2')?.value||'',a=document.getElementById('secAdmin')?.value||'',a2=document.getElementById('secAdmin2')?.value||'';if(!name||p.length<8||p!==p2||a.length<10||a!==a2){toast('Check the account name and passphrases');return}const before=JSON.stringify(state),oldMode=securitySession.mode;try{const cfg=securityNewConfig(),profile=securityNewProfile(name,await securityVerifier(p));cfg.enabled=true;cfg.profiles=[profile];cfg.adminVerifier=await securityVerifier(a);cfg.ledgerKeySalt=securityRandomB64(SECURITY.saltBytes);cfg.ledgerKeyIterations=SECURITY.iterations;cfg.storageProtected=true;cfg.legacyProtectionPending=false;state.security=cfg;securitySession._ledgerKey=await securityEstablishLedgerKey(p,cfg);securitySession.mode='normal';securitySession.accountId=profile.id;const ok=await store.save();if(!ok)throw new Error('encrypted save failed');store.relock();securitySetAppVisibility();securityCloseOverlay();renderAll();toast('Local account created — ledger protected at rest')}catch(e){state=JSON.parse(before);securitySession.lockAdmin();securitySession._ledgerKey=null;securitySession.mode=oldMode;securitySetAppVisibility();toast('Security setup could not be completed — existing data was left unchanged')}}
+function securityShowLogin(){securitySetAppVisibility();const p=securityPrimaryProfile();securityOverlay('securityModal',`<div style="font-size:34px">🔐</div><h2 style="margin:8px 0">Welcome back${p?', '+esc(p.displayName):''}</h2><p class="mut small">Sign in to decrypt this device's LifeLedger ledger.</p><form onsubmit="securityLogin();return false"><label class="f">Login passphrase</label><input id="secLoginPass" type="password" autocomplete="current-password" required autofocus><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px"><button class="btn" type="submit">Sign in</button><button class="btn ghost" type="button" onclick="securityEnterGuest()">Guest mode</button>${securityRestoreButtonHTML()}</div></form><p class="hint" style="margin-top:14px">Protected details stay masked after sign-in. Use the separate Admin key only when you need the full private view.</p>`)}
+async function securityLogin(){const p=securityPrimaryProfile(),v=document.getElementById('secLoginPass')?.value||'';if(!p||!(await securityVerify(v,p.verifier))){toast('Incorrect login passphrase');return}try{if(store.lockedRecord){await securityUnlockLedger(v)}else{const cfg=securityConfig();const key=await securityEstablishLedgerKey(v,cfg);securitySession._ledgerKey=key;securitySession.mode='normal';securitySession.accountId=p.id;if(!cfg.storageProtected||cfg.legacyProtectionPending){const wasProtected=cfg.storageProtected;const wasPending=cfg.legacyProtectionPending;cfg.storageProtected=true;cfg.legacyProtectionPending=false;const ok=await store.save();if(!ok){cfg.storageProtected=wasProtected;cfg.legacyProtectionPending=true;throw new Error('legacy migration save failed')}store.relock()}migrateWorkspace(state);migrateIncomeTypes(state);if(typeof migrateProjectArchives==='function'&&migrateProjectArchives()) await store.save()}securitySetAppVisibility();securityCloseOverlay();renderAll();toast('Signed in — ledger decrypted for this session')}catch(e){securitySession.lockAdmin();securitySession._ledgerKey=null;securitySession.mode='guest';toast('The ledger could not be unlocked — check the passphrase or backup integrity')}}
+function securityEnterGuest(){if(securityEnabled())securityClearDecryptedLedger();securitySession.mode='guest';securitySession.accountId=null;securitySession.lockAdmin();securitySetAppVisibility();securityCloseOverlay();toast('Guest mode — household data is closed')}
+function securityLogout(){securityEnterGuest();securityShowLogin()}
+function securityAccountMenu(){if(!securityEnabled()){securityShowGate(true);return}if(securitySession.mode==='guest'){securityShowLogin();return}if(securitySession.mode==='admin'){securitySession.lockAdmin();securitySession.mode='normal';securitySetAppVisibility();renderAll();toast('Protected view locked');return}securityOverlay('securityModal',`<div style="font-size:30px">👤</div><h2 style="margin:8px 0">${esc(securityPrimaryProfile()?.displayName||'Account')}</h2><p class="mut small">Normal budgeting is available. The whole ledger is encrypted at rest; protected details require the separate Admin key.</p>${!securityConfig().storageProtected?'<p class="hint" style="background:#fff7e6;border:1px solid #ead19b;padding:10px;border-radius:8px">⚠ This ledger still needs its at-rest protection migration. Sign in again if this message remains.</p>':''}<div style="display:grid;gap:10px;margin-top:16px"><button class="btn" onclick="securityShowAdminUnlock()">🔓 Unlock protected details</button><button class="btn ghost" onclick="securityShowEncryptedBackup()">🔐 Export encrypted backup</button><button class="btn ghost" onclick="securityChooseEncryptedRestore()">🔐 Restore encrypted backup</button><button class="btn ghost" onclick="securityLogout()">Log out</button><button class="btn ghost" onclick="securityCloseOverlay()">Close</button></div>`)}
+function securityShowAdminUnlock(){securityOverlay('securityModal',`<div style="font-size:30px">🔓</div><h2 style="margin:8px 0">Admin unlock</h2><p class="mut small">This unlocks protected personal details for this session only.</p><form onsubmit="securityAdminUnlock();return false"><label class="f">Admin key / passphrase</label><input id="secAdminPass" type="password" autocomplete="current-password" required autofocus><div style="display:flex;gap:8px;margin-top:16px"><button class="btn" type="submit">Unlock</button><button class="btn ghost" type="button" onclick="securityAccountMenu()">Back</button></div><p class="hint">Auto-lock: ${securityConfig().policy?.autoLockMinutes||15} minutes.</p></form>`)}
+async function securityAdminUnlock(){const v=document.getElementById('secAdminPass')?.value||'',cfg=securityConfig();if(!cfg.adminVerifier||!(await securityVerify(v,cfg.adminVerifier))){toast('Incorrect admin key');return}try{securitySession.mode='admin';securitySession.adminUnlockedUntil=Date.now()+(+(cfg.policy?.autoLockMinutes||15)*60000);securitySession._adminPass=v;securitySession.protectedData=cfg.protectedEnvelope?await securityDecryptJson(cfg.protectedEnvelope,v,'protected-data'):{};if(securitySession._timer)clearTimeout(securitySession._timer);securitySession._timer=setTimeout(()=>{if(securitySession.mode==='admin'){securitySession.lockAdmin();securitySession.mode='normal';securitySetAppVisibility();renderAll();toast('Protected view auto-locked')}},+(cfg.policy?.autoLockMinutes||15)*60000+250);securitySetAppVisibility();securityCloseOverlay();renderAll();toast('Protected details unlocked')}catch(e){securitySession.lockAdmin();securitySession.mode='normal';securitySetAppVisibility();toast('Protected data could not be unlocked')}}
+async function securitySavePrivateDetails(){if(!securityCanViewProtected()){securityShowAdminUnlock();return}const v=securitySession._adminPass;if(!v){toast('Unlock protected details again');return}const existing=securitySession.protectedData||{},data={...existing,employerName:document.getElementById('secEmployer')?.value||'',bankAccountNumber:document.getElementById('secBank')?.value||'',taxIdentifier:document.getElementById('secTax')?.value||'',policyNumber:document.getElementById('secPolicy')?.value||'',privateNotes:document.getElementById('secPrivateNotes')?.value||''};try{const envelope=await securityEncryptJson(data,v,'protected-data');securitySession.protectedData=data;securityConfig().protectedEnvelope=envelope;const ok=await store.save();if(!ok)throw new Error('save failed');store.relock();toast('Private details saved securely')}catch(e){toast('Private details could not be saved — retry after unlocking again')}}
+function securityShowEncryptedBackup(){securityOverlay('securityModal',`<div style="font-size:30px">🔐</div><h2 style="margin:8px 0">Export encrypted backup</h2><p class="mut small">Enter the normal login passphrase to create a portable encrypted backup. The passphrase is not put in the file.</p><form onsubmit="securityExportEncryptedBackup();return false"><label class="f">Login passphrase</label><input id="secBackupPass" type="password" autocomplete="current-password" required autofocus><div style="display:flex;gap:8px;margin-top:16px"><button class="btn" type="submit">Create encrypted backup</button><button class="btn ghost" type="button" onclick="securityAccountMenu()">Back</button></div></form>`)}
+async function securityExportEncryptedBackup(){const p=document.getElementById('secBackupPass')?.value||'';try{const backup=await securityMakeEncryptedBackup(p);securityCloseOverlay();showExportModal('Encrypted backup of “'+ledgerName()+'” — ciphertext only',JSON.stringify(backup,null,1),ledgerFileStem()+'-encrypted-backup-'+todayISO()+'.json');toast('Encrypted backup prepared')}catch(e){toast('Incorrect passphrase — encrypted backup was not created')}}
+function securityChooseEncryptedRestore(){const i=$('jsonFile');if(i){i.accept='.json,application/json';i.value='';i.click()}}
+function securityShowEncryptedRestorePrompt(payload){securitySession._pendingBackup=payload;securityOverlay('securityModal',`<div style="font-size:30px">🔐</div><h2 style="margin:8px 0">Restore encrypted backup</h2><p class="mut small">Enter the backup's normal login passphrase. LifeLedger will verify and decrypt it before replacing this local workspace.</p><form onsubmit="securityCompleteEncryptedRestore();return false"><label class="f">Backup passphrase</label><input id="secRestorePass" type="password" autocomplete="current-password" required autofocus><div style="display:flex;gap:8px;margin-top:16px"><button class="btn" type="submit">Decrypt & restore</button><button class="btn ghost" type="button" onclick="securitySession._pendingBackup=null;securityCloseOverlay()">Cancel</button></div></form>`)}
+async function securityCompleteEncryptedRestore(){const payload=securitySession._pendingBackup,pass=document.getElementById('secRestorePass')?.value||'';try{await securityRestoreEncryptedBackup(payload,pass);securitySession._pendingBackup=null;securitySetAppVisibility();securityCloseOverlay();renderAll();showView('dash');toast('Encrypted backup restored — ledger protected at rest')}catch(e){toast('Encrypted backup could not be restored — passphrase or file may be invalid')}}
+function securityPrivateDetailsCardHTML(){const data=securitySession.protectedData||{},admin=securityCanViewProtected();return `<div class="card"><div class="cardhead"><h3 style="margin:0">🔐 Private details</h3><span class="grow"></span><span class="chip ${admin?'green':'grey'}">${admin?'Admin unlocked':'Protected'}</span></div><p class="hint">Optional high-value household details. These fields are encrypted separately and are not shown in Guest/Normal view.</p>${admin?`<div class="formgrid"><div><label class="f">Employer</label><input id="secEmployer" value="${esc(data.employerName||'')}"></div><div><label class="f">Bank account number</label><input id="secBank" value="${esc(data.bankAccountNumber||'')}"></div><div><label class="f">Tax identifier</label><input id="secTax" value="${esc(data.taxIdentifier||'')}"></div><div><label class="f">Policy / reference number</label><input id="secPolicy" value="${esc(data.policyNumber||'')}"></div><div style="grid-column:1/-1"><label class="f">Private notes</label><textarea id="secPrivateNotes" rows="3">${esc(data.privateNotes||'')}</textarea></div></div><div style="margin-top:10px"><button class="btn" onclick="securitySavePrivateDetails()">💾 Save encrypted details</button><button class="btn ghost" onclick="securitySession.lockAdmin();securitySession.mode='normal';securitySetAppVisibility();renderAll()">🔒 Lock protected view</button></div>`:`<div class="kpis"><div class="kpi"><div class="lbl">Employer</div><div class="v">••••••</div><div class="sub">Admin unlock required</div></div><div class="kpi"><div class="lbl">Bank account</div><div class="v">••••••</div><div class="sub">Admin unlock required</div></div><div class="kpi"><div class="lbl">Tax identifier</div><div class="v">••••••</div><div class="sub">Admin unlock required</div></div></div><button class="btn small" onclick="securityShowAdminUnlock()">🔓 Unlock protected details</button>`}</div>`}
+const LL_SECURITY_API={SECURITY,SECURITY_FIELD_CLASS,securitySession,securityVerifier,securityVerify,securityEncryptJson,securityDecryptJson,securityMask,securityClassification,securityNewConfig,securityNewProfile,securityEnabled,securityCanViewProtected,securityDisplay,securityBoot,securityAccountMenu,securityShowAdminUnlock,securityPrivateDetailsCardHTML,securityShowEncryptedBackup,securityChooseEncryptedRestore,securityShowEncryptedRestorePrompt,securityCompleteEncryptedRestore};
+globalThis.LL_SECURITY=LL_SECURITY_API;
+/* ================================================================
+   WHOLE-LEDGER ENCRYPTED STORAGE
+   The normal account key protects the complete application state at rest.
+   The Admin layer in 17-security.js remains a second layer for private details.
+   ================================================================ */
+const SECURE_STORAGE=Object.freeze({
+  format:'LifeLedgerEncryptedState',
+  schemaVersion:1,
+  aad:'ledger-state',
+  backupFormat:'LifeLedgerEncryptedBackup'
+});
+
+function securityDeriveAesKey(secret,saltB64,iterations=SECURITY.iterations,usages=['encrypt','decrypt']){
+  const c=securityWebCrypto(),enc=new TextEncoder();
+  return c.subtle.importKey('raw',enc.encode(String(secret)),'PBKDF2',false,['deriveKey']).then(base=>
+    c.subtle.deriveKey(
+      {name:'PBKDF2',salt:securityUnb64(saltB64),iterations:+iterations||SECURITY.iterations,hash:'SHA-256'},
+      base,{name:'AES-GCM',length:SECURITY.keyBits},false,usages
+    )
+  );
+}
+
+async function securityEncryptJsonWithKey(value,key,purpose=SECURE_STORAGE.aad){
+  const c=securityWebCrypto(),enc=new TextEncoder(),iv=securityUnb64(securityRandomB64(SECURITY.ivBytes));
+  const aad=enc.encode('LifeLedger:'+SECURITY.schemaVersion+':'+purpose);
+  const cipher=await c.subtle.encrypt({name:'AES-GCM',iv,additionalData:aad},key,enc.encode(JSON.stringify(value)));
+  return {schemaVersion:SECURITY.schemaVersion,cipher:SECURITY.cipher,iv:securityB64(iv),aad:purpose,ciphertext:securityB64(cipher)};
+}
+
+async function securityDecryptJsonWithKey(envelope,key,purpose=SECURE_STORAGE.aad){
+  if(!envelope||envelope.schemaVersion!==SECURITY.schemaVersion||envelope.cipher!==SECURITY.cipher) throw new Error('Unsupported encrypted-state envelope');
+  const c=securityWebCrypto(),enc=new TextEncoder();
+  const aad=enc.encode('LifeLedger:'+SECURITY.schemaVersion+':'+purpose);
+  const plain=await c.subtle.decrypt({name:'AES-GCM',iv:securityUnb64(envelope.iv),additionalData:aad},key,securityUnb64(envelope.ciphertext));
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
+function securityPublicHeader(cfg){
+  return {
+    schemaVersion:1,
+    enabled:!!cfg?.enabled,
+    profiles:Array.isArray(cfg?.profiles)?cfg.profiles.map(p=>({id:p.id,displayName:p.displayName,role:p.role,verifier:p.verifier})):[],
+    adminVerifier:cfg?.adminVerifier||null,
+    ledgerKeySalt:cfg?.ledgerKeySalt||null,
+    ledgerKeyIterations:+cfg?.ledgerKeyIterations||SECURITY.iterations,
+    policy:cfg?.policy||{guestEnabled:true,autoLockMinutes:15},
+    storageProtected:true,
+    legacyProtectionPending:false
+  };
+}
+
+function securityStorageHeaderToConfig(h){
+  const base=securityNewConfig();
+  return {
+    ...base,
+    schemaVersion:1,
+    enabled:!!h?.enabled,
+    profiles:Array.isArray(h?.profiles)?h.profiles:[],
+    adminVerifier:h?.adminVerifier||null,
+    ledgerKeySalt:h?.ledgerKeySalt||null,
+    ledgerKeyIterations:+h?.ledgerKeyIterations||SECURITY.iterations,
+    policy:h?.policy||base.policy,
+    storageProtected:true,
+    legacyProtectionPending:false,
+    protectedEnvelope:null
+  };
+}
+
+function securityStorageRead(raw){
+  try{
+    const p=typeof raw==='string'?JSON.parse(raw):raw;
+    if(!p||p.format!==SECURE_STORAGE.format||p.schemaVersion!==SECURE_STORAGE.schemaVersion||!p.security||!p.ledger?.ciphertext) return null;
+    if(p.ledger.aad!==SECURE_STORAGE.aad||!p.security.ledgerKeySalt) return null;
+    return p;
+  }catch(e){ return null }
+}
+
+async function securityStorageRecordFromState(snapshot,key){
+  const cfg=snapshot.security||securityNewConfig();
+  const ledger=await securityEncryptJsonWithKey(snapshot,key,SECURE_STORAGE.aad);
+  return JSON.stringify({
+    format:SECURE_STORAGE.format,
+    schemaVersion:SECURE_STORAGE.schemaVersion,
+    security:securityPublicHeader(cfg),
+    ledger
+  });
+}
+
+async function securityEstablishLedgerKey(passphrase,cfg){
+  if(!cfg.ledgerKeySalt){
+    cfg.ledgerKeySalt=securityRandomB64(SECURITY.saltBytes);
+  }
+  cfg.ledgerKeyIterations=+cfg.ledgerKeyIterations||SECURITY.iterations;
+  return securityDeriveAesKey(passphrase,cfg.ledgerKeySalt,cfg.ledgerKeyIterations,['encrypt','decrypt']);
+}
+
+async function securityUnlockLedger(passphrase){
+  const rec=store.lockedRecord||securityStorageRead(localStorage.getItem(LSKEY));
+  if(!rec) throw new Error('No encrypted ledger is available');
+  const key=await securityDeriveAesKey(passphrase,rec.security.ledgerKeySalt,rec.security.ledgerKeyIterations,['encrypt','decrypt']);
+  const next=await securityDecryptJsonWithKey(rec.ledger,key,SECURE_STORAGE.aad);
+  if(!next||!Array.isArray(next.tx)||!next.security?.enabled) throw new Error('Encrypted ledger payload is invalid');
+  migrateWorkspace(next); migrateIncomeTypes(next);
+  state=next;
+  state.security.storageProtected=true;
+  state.security.legacyProtectionPending=false;
+  securitySession._ledgerKey=key;
+  securitySession.accountId=securityPrimaryProfile()?.id||rec.security.profiles?.[0]?.id||null;
+  securitySession.mode='normal';
+  securitySession.lockAdmin();
+  return true;
+}
+
+function securityClearDecryptedLedger(){
+  const header=store.lockedRecord?.security||null;
+  state=freshState();
+  if(header) state.security=securityStorageHeaderToConfig(header);
+  securitySession._ledgerKey=null;
+  securitySession.accountId=null;
+  securitySession.lockAdmin();
+}
+
+async function securityMakeEncryptedBackup(passphrase){
+  const p=securityPrimaryProfile();
+  if(!p||!(await securityVerify(passphrase,p.verifier))) throw new Error('Incorrect login passphrase');
+  const payload=JSON.parse(JSON.stringify(state));
+  const ledger=await securityEncryptJson(payload,passphrase,'encrypted-backup');
+  return {format:SECURE_STORAGE.backupFormat,schemaVersion:1,createdAt:Date.now(),security:securityPublicHeader(state.security),ledger};
+}
+
+async function securityRestoreEncryptedBackup(payload,passphrase){
+  if(!payload||payload.format!==SECURE_STORAGE.backupFormat||payload.schemaVersion!==1||!payload.ledger) throw new Error('Unsupported encrypted backup');
+  const next=await securityDecryptJson(payload.ledger,passphrase,'encrypted-backup');
+  if(!next||!Array.isArray(next.tx)||!next.security?.enabled||!Array.isArray(next.security.profiles)||!next.security.profiles.length) throw new Error('Backup payload is invalid');
+  migrateWorkspace(next); migrateIncomeTypes(next);
+  const oldState=state, oldKey=securitySession._ledgerKey, oldMode=securitySession.mode, oldAccount=securitySession.accountId;
+  next.security.ledgerKeySalt=securityRandomB64(SECURITY.saltBytes);
+  next.security.ledgerKeyIterations=SECURITY.iterations;
+  next.security.storageProtected=true;
+  next.security.legacyProtectionPending=false;
+  const key=await securityDeriveAesKey(passphrase,next.security.ledgerKeySalt,next.security.ledgerKeyIterations,['encrypt','decrypt']);
+  state=next; securitySession._ledgerKey=key; securitySession.mode='normal'; securitySession.accountId=next.security.profiles[0].id;
+  const ok=await store.save();
+  if(!ok){state=oldState;securitySession._ledgerKey=oldKey;securitySession.mode=oldMode;securitySession.accountId=oldAccount;throw new Error('Local encrypted save failed')}
+  store.relock();
+  return true;
+}
+
+globalThis.LL_SECURE_STORAGE={SECURE_STORAGE,securityDeriveAesKey,securityEncryptJsonWithKey,securityDecryptJsonWithKey,securityPublicHeader,securityStorageRead,securityStorageRecordFromState,securityEstablishLedgerKey,securityUnlockLedger,securityClearDecryptedLedger,securityMakeEncryptedBackup,securityRestoreEncryptedBackup};
 /* ---------------- state & storage ---------------- */
 const LSKEY = 'lifeledger.v1';
 const store = {
   ok: (()=>{ try{ localStorage.setItem('__t','1'); localStorage.removeItem('__t'); return true }catch(e){ return false } })(),
-  lastSaveOk: true,
+  lastSaveOk:true,
+  saving:false,
+  lockedRecord:null,
+  _saveChain:Promise.resolve(),
   save(){
-    if(!this.ok){ this.lastSaveOk=false; updateSaveBadge(); return false }
-    try{ localStorage.setItem(LSKEY, JSON.stringify(state)); this.lastSaveOk=true }
-    catch(e){ this.lastSaveOk=false }
-    updateSaveBadge();
-    return this.lastSaveOk;
+    if(!this.ok){ this.lastSaveOk=false; updateSaveBadge(); return Promise.resolve(false) }
+    if(securityEnabled()&&!securitySession._ledgerKey){ this.lastSaveOk=false; updateSaveBadge(); return Promise.resolve(false) }
+    /* Preserve the original synchronous behavior for plaintext legacy/new workspaces.
+       Once whole-ledger protection is active, encryption is necessarily async and is
+       serialized so rapid UI edits cannot race each other. */
+    if(!securityEnabled()){
+      try{ const raw=JSON.stringify(state); localStorage.setItem(LSKEY,raw); this.lastSaveOk=true }
+      catch(e){ this.lastSaveOk=false }
+      updateSaveBadge();
+      return Promise.resolve(this.lastSaveOk);
+    }
+    const snapshot=JSON.parse(JSON.stringify(state));
+    this._saveChain=this._saveChain.then(async()=>{
+      this.saving=true; updateSaveBadge();
+      try{
+        const raw=await securityStorageRecordFromState(snapshot,securitySession._ledgerKey);
+        localStorage.setItem(LSKEY,raw);
+        this.lockedRecord=securityStorageRead(raw)||this.lockedRecord;
+        this.lastSaveOk=true;
+      }catch(e){ this.lastSaveOk=false }
+      this.saving=false; updateSaveBadge();
+      return this.lastSaveOk;
+    });
+    return this._saveChain;
   },
-  load(){ if(!this.ok) return null; try{ const s = localStorage.getItem(LSKEY); return s? JSON.parse(s): null }catch(e){ return null } }
+  flush(){ return this._saveChain },
+  relock(){
+    if(!this.ok){this.lockedRecord=null;return}
+    try{this.lockedRecord=securityStorageRead(localStorage.getItem(LSKEY))}catch(e){this.lockedRecord=null}
+  },
+  load(){
+    if(!this.ok) return null;
+    try{
+      const raw=localStorage.getItem(LSKEY);
+      if(!raw) return null;
+      const locked=securityStorageRead(raw);
+      if(locked){ this.lockedRecord=locked; return {__locked:true,security:securityStorageHeaderToConfig(locked.security)} }
+      this.lockedRecord=null;
+      return JSON.parse(raw);
+    }catch(e){ return null }
+  }
 };
 function freshState(){
   return {
@@ -388,6 +731,7 @@ function freshState(){
       nisPct:5.4, nisCeilingMonthly:13600, healthSurchargeWeekly:8.25, payrollDeductionPct:0,
       savingsTargetPct:10, emergencyMonths:4, businessMarginPct:35, minWageHourly:20.50 },
     streams:[], recurringExpenses:[], tx:[], budgets:{}, household:{members:[]}, projects:[],
+    security:securityNewConfig(),
     meta:{ created:Date.now(), sample:false, init:true, name:'', nameCustom:false, privacySeen:false }
   };
 }
@@ -407,6 +751,16 @@ function migrateWorkspace(s){
   if(!Array.isArray(s.household?.members)) s.household={members:[]};
   if(!Array.isArray(s.projects)) s.projects=[];
   if(!Array.isArray(s.recurringExpenses)) s.recurringExpenses=[];
+  if(!s.security || typeof s.security!=='object') s.security=securityNewConfig();
+  if(!Array.isArray(s.security.profiles)) s.security.profiles=[];
+  if(!s.security.policy || typeof s.security.policy!=='object') s.security.policy={guestEnabled:true,autoLockMinutes:15};
+  if(s.security.adminVerifier===undefined) s.security.adminVerifier=null;
+  if(s.security.protectedEnvelope===undefined) s.security.protectedEnvelope=null;
+  if(s.security.ledgerKeySalt===undefined) s.security.ledgerKeySalt=null;
+  if(s.security.ledgerKeyIterations===undefined) s.security.ledgerKeyIterations=SECURITY.iterations;
+  if(s.security.storageProtected===undefined) s.security.storageProtected=false;
+  if(s.security.legacyProtectionPending===undefined) s.security.legacyProtectionPending=!!s.security.enabled&&!s.security.storageProtected;
+  if(s.security.schemaVersion===undefined) s.security.schemaVersion=1;
   /* workspace naming (1.4.2): a save with no meta.name is an EXISTING install, so
      default nameCustom to true — the user's ledger is theirs and we must not start
      overwriting it with a name derived from their household later. Newly created
@@ -426,6 +780,23 @@ function migrateWorkspace(s){
     if(p.completedAt===undefined) p.completedAt = p.archived? (p.targetDate||p.startDate||null) : null;
     if(!p.fundingPlan) p.fundingPlan={enabled:false,startingReserve:0,oneTimeContribution:0,surplusAllocationPct:0,fixedMonthlyContribution:0};
   }
+  return s;
+}
+function normalizeCashflowContext(t){
+  if(!t || typeof t!=='object') return t;
+  const valid=(list,v)=>list.some(x=>x.id===v);
+  if(!valid(EMPLOYMENT_CONTEXT,t.employmentContext)) t.employmentContext='unknown';
+  if(!valid(SEASONAL_CONTEXT,t.seasonalContext)) t.seasonalContext='unknown';
+  if(!valid(TRANSFER_PURPOSES,t.transferPurpose)) t.transferPurpose='unknown';
+  if(!valid(CASHFLOW_CONTEXT,t.cashflowContext)) t.cashflowContext='ordinary';
+  if(!valid(PROVENANCE_STATES,t.provenance)) t.provenance='reported';
+  if(t.cashflowContext==='foreign_remittance' && t.cat==='income' && !t.incomeType) t.incomeType='gift_remittance';
+  return t;
+}
+function migrateCashflowContext(s){
+  if(!s || typeof s!=='object') return s;
+  if(!Array.isArray(s.tx)) s.tx=[];
+  for(const t of s.tx) normalizeCashflowContext(t);
   return s;
 }
 function migrateIncomeTypes(s){
@@ -605,12 +976,10 @@ function setLedgerName(v){
 function renameLedger(){ const i=$('ledgerNameInput'); if(i) setLedgerName(i.value) }
 
 /* ----------------------------------------------------------------
-   PRIVACY & DATA NOTICE  (1.4.2)
-   There is no login, no account and no encryption in LifeLedger, so
-   there can be no "logon reminder". This says only what is true:
-   the data is local, it is NOT encrypted, and a backup file is a
-   plain-text copy. Claiming protection the app does not provide
-   would be worse than saying nothing at all.
+   PRIVACY & DATA NOTICE
+   Legacy saves remain local and may still be plaintext until the user
+   enables the new local-account security model. The notice is explicit
+   about which layer is protected and which legacy data is not.
 ---------------------------------------------------------------- */
 function showPrivacyNotice(){
   if($('privacyModal')) return;
@@ -623,10 +992,11 @@ function showPrivacyNotice(){
     <h2 style="margin:0 0 4px;font-size:19px">Your data &amp; your privacy</h2>
     <p class="mut small" style="margin:0 0 14px">How <b>${esc(ledgerName())}</b> is stored — stated plainly, including what is <b>not</b> protected.</p>
     <div style="font-size:13.3px;line-height:1.65">
-      <p style="margin:0 0 8px"><b>✓ It stays on this device.</b> Everything lives in this browser's local storage for this app only. There is no server, no account, no sync and no tracking — LifeLedger never sends your figures anywhere.</p>
-      <p style="margin:0 0 8px;background:#fdf3e4;border:1px solid #f2d3a2;border-radius:8px;padding:10px 12px"><b>⚠ It is not encrypted.</b> Your entries are stored as readable text, as are the JSON backup files you export. There is no password protecting them.</p>
-      <p style="margin:0 0 8px"><b>Who can read it:</b> anyone who can use this device or sign in to this computer account, anyone using this browser profile, and anyone you send a backup file to. On a shared or work computer, treat it as legible to others.</p>
-      <p style="margin:0 0 8px"><b>Protect it yourself:</b> keep this device and computer account locked, use a separate browser profile for finances, and store backups somewhere you control. If you need at-rest secrecy, put the backup inside an encrypted volume or password-protected archive — the app cannot do it for you.</p>
+      <p style="margin:0 0 8px"><b>✓ It stays on this device.</b> LifeLedger remains local-first: there is no required cloud account, sync service or server storing your figures.</p>
+      <p style="margin:0 0 8px;background:#edf7ef;border:1px solid #b9dfc0;border-radius:8px;padding:10px 12px"><b>🔐 With a local account:</b> ordinary budgeting uses your login; private high-value details are stored in a separate authenticated encrypted envelope and require the Admin key to reveal.</p>
+      <p style="margin:0 0 8px;background:#fdf3e4;border:1px solid #f2d3a2;border-radius:8px;padding:10px 12px"><b>⚠ Legacy financial fields:</b> existing 1.4.x ledger data remains local and is not retroactively encrypted simply by installing this version. Use Account to enable protection during the migration process.</p>
+      <p style="margin:0 0 8px"><b>Who can read what:</b> Guest cannot open the household UI. A signed-in user can use normal budgeting. Protected details require the separate Admin key. Anyone with control of the unlocked operating system remains outside the app's threat boundary.</p>
+      <p style="margin:0 0 8px"><b>Backups:</b> plain JSON/CSV exports remain readable copies. Use an encrypted backup when that workflow is available, and store any export somewhere you control.</p>
       <p style="margin:0 0 2px"><b>Clearing browser data, uninstalling, or “Reset everything” deletes the ledger permanently.</b> Nothing can recover it. Export a JSON backup first.</p>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
@@ -651,6 +1021,7 @@ function maybeShowPrivacyNotice(){
    than stacked on top of it. */
 function bootNotices(){
   if(!store.ok){ showStorageWarning(); return }
+  if(typeof securityBoot==='function'){ securityBoot(); return }
   maybeShowPrivacyNotice();
 }
 
@@ -791,6 +1162,14 @@ function buildSample(){
     if(t.cat==='savings') continue;
     if(t.cat==='upkeep'){ t.projectId=roofId; t.projectItemId=(Math.random()<0.5?roofItemA:roofItemB); continue }
     if(['dining','toiletries','transport','parties'].includes(t.cat)) t.memberId=p2.id;
+  }
+  /* Keep the demonstration deterministic: the project archive/actuals checks need
+     at least one genuine project-linked cost even when the randomized upkeep branch
+     above produces zero rows. */
+  if(!tx.some(t=>t.projectId)){
+    const base=new Date(now.getFullYear(),now.getMonth(),6);
+    tx.push({id:uid()+('s'+(n++)),date:iso(base),cat:'upkeep',sub:'Sample project cost',desc:'Bathroom refurbishment sample cost',
+      amt:650,src:'sample',ded:false,projectId:roofId,projectItemId:roofItemA});
   }
   const budgets={ loans:5250, groceries:1750, utilities:1150, auto:700, insurance:900, transport:260, dining:620,
     toiletries:220, subscriptions:185, entertainment:580, parties:420, education:200, medical:220, upkeep:260, savings:600, taxes:80, income:0 };
@@ -1165,6 +1544,7 @@ function dataHealth(){
   const linked=state.tx.filter(x=>x.projectId).length;
   const attributed=state.tx.filter(x=>x.memberId).length;
   const budgeted=EXPENSE_CATS.filter(c=>+state.budgets[c.id]>0).length;
+  const integrityIssues=state.tx.filter(x=>x.integrity==='review-required'||x.integrity==='conflicting'||x.integrity==='suspicious').length;
 
   const checks=[
     { id:'coverage', ok: missing.length===0, sev: missing.length>=3?'warn':'info', label:'Month-by-month coverage',
@@ -1183,6 +1563,9 @@ function dataHealth(){
     { id:'budgets', ok: budgeted>=8, sev:'info', label:'Budget coverage',
       detail: budgeted? budgeted+' of '+EXPENSE_CATS.length+' expense categories have a monthly budget.'
         : 'No monthly budgets set — Budgets ▸ Apply guideline budgets creates a starting set.' },
+    { id:'integrity', ok: integrityIssues===0, sev:integrityIssues>0?'warn':'info', label:'No unresolved data-integrity flags',
+      detail: integrityIssues? integrityIssues+' ledger entr'+(integrityIssues===1?'y has':'ies have')+' unresolved import/input integrity flags. High-impact analysis should be independently verified.'
+        : 'No unresolved integrity flags are attached to ledger entries.' },
     { id:'attribution', ok: (state.household.members.length<2)||attributed>0, sev:'info', label:'Household attribution in use',
       detail: state.household.members.length<2? 'Single-contributor household — attribution is optional.'
         : attributed? attributed+' entr'+(attributed===1?'y is':'ies are')+' attributed to a member; '+linked+' linked to a project.'
@@ -1191,7 +1574,7 @@ function dataHealth(){
   const score=checks.filter(c=>c.ok).length;
   return { checks, score, total:checks.length, pct: Math.round(score/checks.length*100),
     monthsChecked, monthsWithData:withData.length, missing, emptyBoth, streams,
-    counts:{ income, expense, unclassified, linked, attributed, budgeted, projects:(state.projects||[]).length,
+    counts:{ income, expense, unclassified, linked, attributed, budgeted, integrityIssues, projects:(state.projects||[]).length,
       archived:(state.projects||[]).filter(p=>p.archived).length, members:state.household.members.length } };
 }
 /* ================================================================
@@ -2192,11 +2575,11 @@ function renderIngest(){
       <button class="btn ghost" onclick="downloadTemplate()">⬇️ Download template</button>
       <input type="file" id="csvIn" accept=".csv,text/csv" style="display:none" onchange="handleCSVFile(this)">
     </div>
-    <div class="status" id="csvStatus">${UI.csvMsg||''}</div>
+    <div class="status" id="csvStatus">${UI.csvMsg||''}</div>${UI.csvRejected&&UI.csvRejected.length?`<div class="hint" style="margin-top:6px;background:#fdecec;border:1px solid #f2b8b8;padding:8px;border-radius:7px"><b>Rejected rows:</b> ${UI.csvRejected.slice(0,6).map(x=>`row ${x.row}: ${esc(x.reason)}`).join(' · ')}${UI.csvRejected.length>6?' · …and '+(UI.csvRejected.length-6)+' more':''} — LifeLedger did not silently convert these values.</div>`:''}
     ${UI.csvCands&&UI.csvCands.length? `
-      <div class="scrollx" style="margin-top:8px"><table class="t"><thead><tr><th>Date</th><th>Vendor</th><th>Description</th><th>Category</th><th class="num">Amount</th></tr></thead>
-      <tbody>${UI.csvCands.slice(0,10).map(c=>`<tr><td>${c.date}</td><td>${esc(c.vendor)}</td><td>${esc(c.desc)}</td><td>${catIcon(c.cat)} ${esc(catName(c.cat))}</td><td class="num">${fmt(c.amount)}</td></tr>`).join('')}</tbody></table></div>
-      <p class="hint">${UI.csvCands.length>10?('…and '+(UI.csvCands.length-10)+' more. '):''}Categories were auto-assigned where possible.</p>
+      <div class="scrollx" style="margin-top:8px"><table class="t"><thead><tr><th>Date</th><th>Vendor</th><th>Description</th><th>Category</th><th class="num">Amount</th><th>Integrity</th></tr></thead>
+      <tbody>${UI.csvCands.slice(0,10).map(c=>`<tr><td>${c.date}</td><td>${esc(c.vendor)}</td><td>${esc(c.desc)}</td><td>${catIcon(c.cat)} ${esc(catName(c.cat))}</td><td class="num">${fmt(c.amount)}</td><td>${(c.flags||[]).length?'<span class="chip amber">review</span>':'<span class="chip green">clean</span>'}</td></tr>`).join('')}</tbody></table></div>
+      <p class="hint">${UI.csvCands.length>10?('…and '+(UI.csvCands.length-10)+' more. '):''}Negative/invalid amounts and malformed dates are rejected rather than silently corrected. Flagged rows require review.</p>
       <button class="btn" onclick="importCSV()">➕ Import ${UI.csvCands.length} rows</button>`:''}
   </div>`;
 }
@@ -2255,8 +2638,13 @@ function parseEmailText(){
   if(cands.length){ const tbl=document.querySelector('#v-ingest .card .scrollx'); if(tbl) tbl.scrollIntoView({behavior:'smooth',block:'center'}) }
 }
 /* ---- the heuristic parser (works on OCR text, emails, statements) ---- */
-function mkISO(y,m,d){ m=Math.min(12,Math.max(1,m)); d=Math.min(31,Math.max(1,d));
-  return y+'-'+String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0') }
+function mkISO(y,m,d){
+  y=+y; m=+m; d=+d;
+  if(!Number.isInteger(y)||y<1900||y>2100||!Number.isInteger(m)||m<1||m>12||!Number.isInteger(d)||d<1||d>31) return null;
+  const dt=new Date(y,m-1,d);
+  if(dt.getFullYear()!==y||dt.getMonth()!==m-1||dt.getDate()!==d) return null;
+  return y+'-'+String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+}
 function extractDate(s){
   s=String(s||'');
   let m=s.match(/(20\d{2})-(\d{1,2})-(\d{1,2})/); if(m) return mkISO(+m[1],+m[2],+m[3]);
@@ -2321,14 +2709,47 @@ function handleCSVFile(input){
   r.onload=()=>{
     const res=parseCSVText(String(r.result||''));
     if(res.error){ UI.csvMsg='⚠️ '+res.error; UI.csvCands=[] }
-    else { UI.csvMsg='✔ Read '+res.cands.length+' rows — preview below, then import.'; UI.csvCands=res.cands }
+    else { const s=csvIntegritySummary(res); UI.csvMsg='✔ Read '+res.cands.length+' candidate rows'+(s.rejected?' — '+s.rejected+' row(s) rejected for integrity issues':'')+' — review before import.'; UI.csvCands=res.cands; UI.csvRejected=res.rejected||[] }
     renderIngest();
   };
   r.readAsText(f);
 }
-function csvLine(l){ const out=[]; let cur='',q=false;
-  for(const ch of l){ if(ch==='"'){ q=!q } else if(ch===','&&!q){ out.push(cur); cur='' } else cur+=ch }
-  out.push(cur); return out.map(s=>s.trim());
+function csvRecords(text){
+  const rows=[]; let row=[], cur='', q=false;
+  const s=String(text||'');
+  for(let i=0;i<s.length;i++){
+    const ch=s[i], nx=s[i+1];
+    if(ch==='"'){
+      if(q && nx==='"'){ cur+='"'; i++; }
+      else q=!q;
+    }else if(ch===',' && !q){
+      row.push(cur.trim()); cur='';
+    }else if((ch==='\n'||ch==='\r') && !q){
+      if(ch==='\r'&&nx==='\n') i++;
+      row.push(cur.trim()); cur='';
+      if(row.some(v=>String(v).trim()!=='')) rows.push(row);
+      row=[];
+    }else cur+=ch;
+  }
+  if(q) return {error:'CSV contains an unterminated quoted field.'};
+  row.push(cur.trim());
+  if(row.some(v=>String(v).trim()!=='')) rows.push(row);
+  return {rows};
+}
+function csvLine(l){ const r=csvRecords(l); return r.error?[]:(r.rows[0]||[]); }
+function csvDateStatus(raw){
+  const s=String(raw||'').trim();
+  if(!s) return {ok:false,reason:'missing date'};
+  const dt=extractDate(s);
+  return dt?{ok:true,date:dt}:{ok:false,reason:'invalid date'};
+}
+function csvAmountStatus(raw){
+  const s=String(raw??'').trim();
+  if(!s) return {ok:false,reason:'missing amount'};
+  const n=parseAmt(s);
+  if(!Number.isFinite(n)||n===0) return {ok:false,reason:'invalid amount'};
+  if(n<0) return {ok:false,reason:'negative amount'};
+  return {ok:true,amount:round2(n)};
 }
 function matchCatName(name){
   const s=String(name||'').toLowerCase().replace(/[^a-z]/g,'');
@@ -2338,46 +2759,102 @@ function matchCatName(name){
   return null;
 }
 function parseCSVText(text){
-  const lines=text.split(/\r?\n/).filter(l=>l.trim());
-  if(!lines.length) return {error:'empty file'};
-  const head=csvLine(lines[0]).map(h=>h.toLowerCase());
+  const parsed=csvRecords(text);
+  if(parsed.error) return {error:parsed.error};
+  const rows=parsed.rows;
+  if(!rows.length) return {error:'empty file'};
+  const head=rows[0].map(h=>String(h).toLowerCase().trim());
   const find=(...names)=>{ for(const nm of names){ const i=head.findIndex(h=>h===nm||h.startsWith(nm)); if(i>=0) return i } return -1 };
   let iDate=find('date'), iAmt=find('amount','amt','value','total','sum'), iDesc=find('description','desc','details','memo','notes','narrative','particulars'),
       iVen=find('vendor','merchant','payee','store','company'), iCat=find('category','cat','type','tag');
+  let start=1;
   if(iDate<0||iAmt<0){
-    /* maybe headerless: date,description,amount */
-    const t1=csvLine(lines[0]);
-    if(t1.length>=3 && /^\d/.test(t1[0]) && !isNaN(parseFloat(t1[t1.length-1].replace(/[^\d.]/g,'')))){
-      iDate=0; iDesc=1; iAmt=t1.length-1; iVen=-1; iCat=-1; lines.unshift([]);
+    const t1=rows[0];
+    if(t1.length>=3 && /^\d/.test(t1[0]) && Number.isFinite(parseAmt(t1[t1.length-1]))){
+      iDate=0; iDesc=1; iAmt=t1.length-1; iVen=-1; iCat=-1; start=0;
     } else return {error:'Could not find date/amount columns. Use the template to see the expected headers.'};
   }
-  const cands=[];
-  for(let r=1;r<lines.length;r++){
-    const c=csvLine(lines[r]);
-    if(!c[iDate]) continue;
-    const amt=Math.abs(parseAmt(c[iAmt])); if(!amt) continue;
-    const desc=iDesc>=0? c[iDesc]:'';
-    const ven=iVen>=0? c[iVen]:'';
-    const cat=(iCat>=0&&matchCatName(c[iCat]))||guessCat(desc+' '+ven)||'other';
+  const cands=[], rejected=[];
+  for(let r=start;r<rows.length;r++){
+    const c=rows[r];
+    if(!c.length||c.every(v=>!String(v||'').trim())) continue;
+    const ds=csvDateStatus(c[iDate]);
+    const as=csvAmountStatus(c[iAmt]);
+    if(!ds.ok || !as.ok){
+      rejected.push({row:r+1,reason:[ds.ok?'':ds.reason,as.ok?'':as.reason].filter(Boolean).join('; '),raw:c});
+      continue;
+    }
+    const desc=iDesc>=0? String(c[iDesc]||'').trim():'';
+    const ven=iVen>=0? String(c[iVen]||'').trim():'';
+    const suppliedCat=iCat>=0?String(c[iCat]||'').trim():'';
+    const matchedCat=iCat>=0?matchCatName(suppliedCat):null;
+    const guessedCat=guessCat(desc+' '+ven)||'other';
+    const cat=matchedCat||guessedCat;
     const incomeType=cat==='income'?guessIncomeType(desc+' '+ven):null;
-    const dt=extractDate(c[iDate])||todayISO();
-    cands.push({date:dt, amount:round2(amt), vendor:ven, desc, cat, ...(incomeType?{incomeType}:{}), src:'csv'});
+    const cashflowContext=inferCashflowContext(desc+' '+ven);
+    const transferPurpose=cashflowContext==='foreign_remittance'?inferTransferPurpose(desc+' '+ven):'unknown';
+    const future=ds.date>todayISO();
+    const large=as.amount>=100000;
+    const confidence=matchedCat&&iVen>=0&&ven?'high':(matchedCat||ven?'verify':'verify');
+    const flags=[];
+    if(!matchedCat && suppliedCat) flags.push('unrecognized category');
+    if(cat==='other') flags.push('unclassified');
+    if(future) flags.push('future date');
+    if(large) flags.push('unusually large amount');
+    if(cashflowContext==='sou_sou_payout'||cashflowContext==='sou_sou_contribution') flags.push(cashflowContext==='sou_sou_payout'?'sou-sou payout':'sou-sou contribution');
+    if(cashflowContext==='foreign_remittance' && transferPurpose==='unknown') flags.push('remittance purpose review');
+    cands.push({date:ds.date,amount:as.amount,vendor:ven,desc,cat,
+      ...(incomeType?{incomeType}:{}),cashflowContext,transferPurpose,
+      provenance:'reported',src:'csv',conf:confidence,flags});
   }
-  return {cands};
+  return {cands,rejected};
+}
+function csvIntegritySummary(res){
+  const rejected=(res?.rejected||[]).length, flagged=(res?.cands||[]).filter(x=>(x.flags||[]).length).length;
+  return {rejected,flagged,total:(res?.cands||[]).length+rejected};
 }
 function importCSV(){
-  let n=0;
+  let n=0, skipped=0;
   for(const c of (UI.csvCands||[])){
-    state.tx.push({id:uid(), date:c.date, cat:c.cat, sub:c.vendor, desc:c.desc, amt:c.amount, src:'csv', ded:false,
-      ...(c.cat==='income'?{incomeType:c.incomeType||guessIncomeType((c.vendor||'')+' '+(c.desc||''))||'other_income'}:{})}); n++;
+    const ds=csvDateStatus(c.date), as=csvAmountStatus(c.amount);
+    if(!ds.ok||!as.ok){ skipped++; continue; }
+    if(c.flags?.includes('future date')){ skipped++; continue; }
+    state.tx.push({id:uid(),date:ds.date,cat:CAT[c.cat]?c.cat:'other',sub:String(c.vendor||''),desc:String(c.desc||''),amt:as.amount,src:'csv',ded:false,
+      integrity:(c.flags&&c.flags.length)?'review-required':'imported-reviewed',
+      cashflowContext:c.cashflowContext||inferCashflowContext((c.vendor||'')+' '+(c.desc||'')),
+      transferPurpose:c.transferPurpose||'unknown',
+      provenance:c.provenance||'reported',
+      ...(c.cat==='income'?{incomeType:c.incomeType||guessIncomeType((c.vendor||'')+' '+(c.desc||''))||'other_income'}:{})});
+    n++;
   }
   UI.csvCands=[]; UI.csvMsg='';
-  store.save(); renderAll(); toast(n+' rows imported from CSV');
+  store.save(); renderAll(); toast(n+' rows imported from CSV'+(skipped?' — '+skipped+' rejected':''));
 }
 
 /* ================================================================
    EXPORT / IMPORT / MENU / ROUTER / BOOT
    ================================================================ */
+
+/* ================================================================
+   HIGH-IMPACT USE NOTICE
+   This is a product limitation notice, not a claim that the user is
+   truthful or that LifeLedger has certified the underlying records.
+   ================================================================ */
+function showHighImpactNotice(){
+  if($('highImpactModal')) return;
+  const h=document.createElement('div'); h.id='highImpactModal';
+  h.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.7);z-index:310;display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto';
+  h.innerHTML=`<div style="background:#fff;border-radius:14px;padding:26px;max-width:640px;box-shadow:0 20px 50px rgba(0,0,0,.3)">
+    <div style="font-size:30px">⚠️</div>
+    <h2 style="margin:6px 0 10px">Tax, audit &amp; other high-impact use</h2>
+    <p style="font-size:13.5px;line-height:1.65"><b>Data Integrity Notice:</b> LifeLedger provides recordkeeping, calculations and analytical estimates from information entered or imported by the user. It does not independently establish that those records are truthful, complete, authentic, or legally sufficient.</p>
+    <p style="font-size:13.5px;line-height:1.65">Incorrect, incomplete, estimated, misleading, or intentionally false information can produce materially inaccurate findings. Some unusual values may pass plausibility thresholds, so a “clean” result is not a certification of truth.</p>
+    <p style="font-size:13.5px;line-height:1.65"><b>Do not rely on LifeLedger alone</b> for tax filings, audits, regulatory submissions, legal matters, financial decisions, or other consequential purposes. Review the underlying records and obtain qualified professional advice where appropriate.</p>
+    <div style="background:#fdf3e4;border:1px solid #f2d3a2;border-radius:8px;padding:10px 12px;font-size:12.5px;line-height:1.55"><b>System safeguard:</b> unresolved data-integrity flags reduce LifeLedger's data-health score. Corrected records are marked as corrected rather than silently rewritten.</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:16px"><button class="btn" onclick="document.getElementById('highImpactModal').remove()">I understand</button></div>
+  </div>`;
+  document.body.appendChild(h);
+}
 
 /* ----------------------------------------------------------------
    IMPROVEMENT 5 — Full CSV export including all attribution fields
@@ -2467,16 +2944,23 @@ function importJSONClick(){ closeMenu(); $('jsonFile').click() }
 function importJSONFile(input){
   const f=input.files[0]; if(!f) return;
   const r=new FileReader();
-  r.onload=()=>{
+  r.onload=async()=>{
     try{
       const p=JSON.parse(r.result);
+      if(p?.format===SECURE_STORAGE.backupFormat){ securityShowEncryptedRestorePrompt(p); return }
       if(!p||!Array.isArray(p.tx)) throw new Error('bad format');
-      const base=freshState();
-      state={...base, ...p, settings:migrateSettings(Object.assign({}, p.settings||{})), meta:{...base.meta, ...(p.meta||{}), init:true}};
+      if(securityEnabled()&&!securityIsNormal()) throw new Error('sign in first');
+      const base=freshState(), localSecurity=securityEnabled()?JSON.parse(JSON.stringify(state.security)):null;
+      state={...base,...p,settings:migrateSettings(Object.assign({},p.settings||{})),meta:{...base.meta,...(p.meta||{}),init:true}};
+      if(localSecurity) state.security=localSecurity;
       migrateIncomeTypes(state); migrateWorkspace(state);
-      store.save(); bootTimeDefaults(); renderAll(); toast('Backup restored — '+p.tx.length+' entries');
-    }catch(e){ toast('That file is not a valid LifeLedger backup') }
-    input.value='';
+      if(localSecurity){ state.security.storageProtected=true; state.security.legacyProtectionPending=false }
+      const ok=await store.save();
+      if(!ok) throw new Error('save failed');
+      if(localSecurity) store.relock();
+      bootTimeDefaults(); renderAll(); toast('Backup restored — '+p.tx.length+' entries');
+    }catch(e){ toast(e.message==='sign in first'?'Sign in before restoring a plain JSON backup':'That file is not a valid LifeLedger backup') }
+    finally{ input.value='' }
   };
   r.readAsText(f);
 }
@@ -2655,6 +3139,7 @@ function renderHousehold(){
   '<div class="kpi"><div class="lbl">Variance</div><div class="v '+(budgeted-st.exp<0?'neg':'pos')+'">'+fmt0(budgeted-st.exp)+'</div><div class="sub">'+(budgeted-st.exp<0?'over budget':'remaining')+'</div></div></div></div></div>'+
   /* IMPROVEMENT 8 — visual split of household spending by contributor */
   memberSplitCardHTML(mk.y, mk.m);
+  el.innerHTML += securityPrivateDetailsCardHTML();
 }/* ================================================================
    VIEW: PROJECTS & SPECIAL BUDGETS
    ================================================================ */
@@ -2885,29 +3370,31 @@ function renderProjects(){
   (cards||'<div class="card" style="text-align:center;padding:36px"><div style="font-size:38px">🛠️</div><h3>No special projects yet</h3><p class="mut">Create a finite budget instead of forcing a renovation, event or emergency into a recurring monthly category.</p></div>')+
   /* IMPROVEMENT 7 — finished projects move here instead of piling up */
   archivedCardHTML();
-}(function boot(){
+}(async function boot(){
   /* expose read/write access for the browser console & tests */
-  window.LL={ get state(){return state}, set state(v){ state=v }, get UI(){return UI} };
+  window.LL={ get state(){return state}, set state(v){ state=v }, get UI(){return UI}, get store(){return store} };
   const loaded=store.load();
-  state=loaded||freshState();
-  if(loaded) state.settings=migrateSettings(state.settings);   /* migrate older saves to the current schema */
+  const locked=!!loaded?.__locked;
+  state=locked?freshState():(loaded||freshState());
+  if(locked) state.security=securityStorageHeaderToConfig(loaded.security);
+  if(!locked && loaded) state.settings=migrateSettings(state.settings);
   migrateWorkspace(state);
-  if(!loaded){
+  migrateCashflowContext(state);
+  if(!locked && !loaded){
     const s=buildSample();
     state.tx=s.tx; state.budgets=s.budgets; state.streams=s.streams;
     state.household=s.household||{members:[]}; state.projects=s.projects||[];
     state.meta.sample=true; migrateIncomeTypes(state); migrateProjectArchives(); store.save();
-  }
-  else {
+  } else if(!locked && loaded) {
     migrateIncomeTypes(state);
-    if(migrateProjectArchives()) store.save();
+    if(!securityEnabled() && migrateProjectArchives()) store.save();
   }
   if(!state.meta) state.meta={init:true,sample:false};
   $('currencySel').innerHTML=CURRENCIES.map(c=>`<option value="${c[0]}" ${c[0]===state.settings.currency?'selected':''}>${c[0]} ${c[1]}</option>`).join('');
   bootTimeDefaults();
   renderAll();
   showView('dash');
-  bootNotices();   /* storage-loss warning (1.4.0), else the privacy notice (1.4.2) */
+  bootNotices();   /* storage warning or security access gate */
 })();
 </script>
 </body>
