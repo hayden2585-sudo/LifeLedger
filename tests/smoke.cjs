@@ -12,6 +12,17 @@ function assert(name, cond){ console.log((cond?'PASS':'FAIL')+' - '+name); if(!c
 setTimeout(()=>{
 try{
   assert('boot rendered dashboard KPIs', d.querySelectorAll('#v-dash .kpi').length>=4);
+  assert('appearance console is available', typeof w.llOpenAppearance==='function');
+  w.llOpenAppearance();
+  assert('appearance console opens', !!d.getElementById('llAppearanceModal') && d.getElementById('llAppearanceModal').classList.contains('open'));
+  d.getElementById('llThemeSelect').value='ocean';
+  d.getElementById('llFontSelect').value='nunito';
+  d.getElementById('llFontSize').value='large';
+  w.llPreviewAppearance();
+  assert('theme preview changes presentation settings', d.documentElement.dataset.theme==='ocean' && d.documentElement.dataset.font==='nunito' && d.documentElement.dataset.fontSize==='large');
+  w.llResetAppearance();
+  assert('appearance reset restores default theme', d.documentElement.dataset.theme==='modern' && w.LL.state.settings.uiTheme==='modern');
+  w.llCloseAppearance();
   assert('sample data loaded', w.LL.state.tx.length>150);
   assert('dashboard donut svg', !!d.querySelector('#v-dash svg'));
   for(const v of ['ledger','grid','budgets','income','plan','ingest','dash']){
