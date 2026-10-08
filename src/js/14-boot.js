@@ -18,8 +18,6 @@
     if(!securityEnabled() && migrateProjectArchives()) store.save();
   }
   if(!state.meta) state.meta={init:true,sample:false};
-  if(typeof llEnsureAppearanceSettings==='function') llEnsureAppearanceSettings();
-  if(typeof llApplyAppearance==='function') llApplyAppearance();
   $('currencySel').innerHTML=CURRENCIES.map(c=>`<option value="${c[0]}" ${c[0]===state.settings.currency?'selected':''}>${c[0]} ${c[1]}</option>`).join('');
   bootTimeDefaults();
   renderAll();

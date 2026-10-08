@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const MODULES = ['01-core.js','17-security.js','18-secure-storage.js','02-state.js','03-sample.js','04-charts.js','05-engine.js',
   '06-view-dashboard.js','07-view-ledger.js','08-view-grid.js','09-view-budgets.js',
-  '10-view-income.js','11-view-plan.js','12-view-ingest.js','13-io.js','15-view-household.js','16-view-projects.js','19-theme.js','14-boot.js'];
+  '10-view-income.js','11-view-plan.js','12-view-ingest.js','13-io.js','15-view-household.js','16-view-projects.js','14-boot.js'];
 const read = p => readFileSync(join(ROOT, p)).toString();
 
 function buildWeb() {

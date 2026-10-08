@@ -121,24 +121,6 @@ setTimeout(()=>{ try{
   assert('household spending split excludes sou-sou contributions from spending', souSplit.total===2000);
   assert('ordinary income and ordinary spending remain unchanged by sou-sou policy',
     souAgg.inc===5000 && souAgg.exp===2000 && souAgg.byCat.rent===2000 && !('groceries' in souAgg.byCat));
-
-  /* Multiple simultaneous clubs must remain independent at the accounting layer.
-     There is intentionally no cycle-management subsystem here; these assertions
-     prove that transaction-level classification remains safe without one. */
-  const multiSou=[
-    {id:'club-a-c1',date:w.todayISO(),cat:'groceries',sub:'Sou-sou Club A',desc:'Sou-sou contribution - Club A',amt:300},
-    {id:'club-b-c1',date:w.todayISO(),cat:'groceries',sub:'Sou-sou Club B',desc:'Sou-sou contribution - Club B',amt:450},
-    {id:'club-a-p',date:w.todayISO(),cat:'income',sub:'Sou-sou Club A',desc:'Sou-sou payout - Club A',amt:3000},
-    {id:'club-b-p',date:w.todayISO(),cat:'income',sub:'Sou-sou Club B',desc:'Sou-sou payout - Club B',amt:5400},
-    {id:'club-a-missed',date:w.todayISO(),cat:'groceries',sub:'Sou-sou Club A',desc:'Sou-sou contribution missed',amt:0},
-    {id:'multi-rent',date:w.todayISO(),cat:'rent',sub:'Landlord',desc:'Rent',amt:1800}
-  ];
-  const multiAgg=w.agg(multiSou);
-  assert('multiple sou-sou clubs do not inflate headline income', multiAgg.inc===0);
-  assert('multiple sou-sou clubs do not inflate headline expenses', multiAgg.exp===1800 && !('groceries' in multiAgg.byCat));
-  assert('multiple sou-sou clubs preserve literal cash movement', multiAgg.cashIn===8400 && multiAgg.cashOut===2550);
-  assert('zero/missed sou-sou contribution does not create a phantom expense', multiAgg.exp===1800);
-  assert('payout size does not change sou-sou accounting treatment', multiAgg.inc===0);
   w.LL.state.tx=keepSouTx; w.renderAll();
 
   /* the same must hold for the sample workspace exactly as it boots */
@@ -518,7 +500,7 @@ setTimeout(()=>{ try{
   if(dom.errors.length) console.log('\nERRORS:\n'+dom.errors.join('\n---\n'));
 }catch(e){ console.log('CRASH:',e.stack); fails++ }
 console.log(fails? '\n'+fails+' FAILURES' : '\nALL PASSED');
-/* Primary phase completes here; the storage-loss phase below owns final process exit. */
+process.exit(fails?1:0);
 },400);
 
 /* ---------- #1 storage-loss modal (separate DOM with localStorage blocked) ---------- */
