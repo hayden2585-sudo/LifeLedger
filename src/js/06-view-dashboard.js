@@ -37,6 +37,7 @@ function renderDash(){
   const kpi=(lbl,val,sub,cls)=>`<div class="kpi"><div class="lbl">${lbl}</div><div class="v ${cls||''}">${val}</div><div class="sub">${sub||''}</div></div>`;
   const shownAlerts=visibleAlerts();
   const health=dataHealth();
+  UI.lastDataHealth=health;
   el.innerHTML=`
   ${alertPanelHTML(shownAlerts, health, alertsFor())}
   <div class="cardhead">

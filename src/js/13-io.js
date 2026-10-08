@@ -158,6 +158,13 @@ function refreshLedgerNameInputs(){
 function renderChrome(){
   const name=ledgerName();
   document.title=name+' — LifeLedger';
+  const dateEl=$('todayDate');
+  if(dateEl){
+    const label=new Intl.DateTimeFormat(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'}).format(new Date());
+    const textEl=dateEl.querySelector('span');
+    if(textEl) textEl.textContent=label;
+    dateEl.setAttribute('aria-label','Today is '+label);
+  }
   const bn=$('brandName'); if(bn) bn.textContent=name;
   const bt=$('brandTag');
   if(bt) bt.textContent = ledgerNameIsCustom()

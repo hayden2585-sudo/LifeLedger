@@ -8,10 +8,12 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win --mac --linux",
-    "dist:win": "electron-builder --win",
-    "dist:mac": "electron-builder --mac",
-    "dist:linux": "electron-builder --linux"
+    "prepare-release": "node ../tools/release-hygiene.mjs",
+    "start:clean": "npm run prepare-release && electron .",
+    "dist": "npm run prepare-release && electron-builder --win --mac --linux",
+    "dist:win": "npm run prepare-release && electron-builder --win",
+    "dist:mac": "npm run prepare-release && electron-builder --mac",
+    "dist:linux": "npm run prepare-release && electron-builder --linux"
   },
   "devDependencies": {
     "electron": "^33.0.0",

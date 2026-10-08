@@ -233,8 +233,30 @@ function alertsFor(){
 /* alerts the user has not muted this session, plus the per-tab badge count */
 function visibleAlerts(){ const d=UI.alertsDismissed||{}; return alertsFor().filter(a=>!d[a.key]) }
 function alertCountFor(view){ return visibleAlerts().filter(a=>a.view===view).length }
-function dismissAlert(key){ UI.alertsDismissed=UI.alertsDismissed||{}; UI.alertsDismissed[key]=1; renderAll() }
-function restoreAlerts(){ UI.alertsDismissed={}; renderAll(); toast('Muted alerts restored') }
+function refreshAlertSurface(){
+  const dash=document.getElementById('v-dash');
+  const panel=dash && dash.firstElementChild && dash.firstElementChild.querySelector('#alertPanelHead');
+  if(panel && typeof alertPanelHTML==='function' && typeof dataHealth==='function'){
+    const alerts=visibleAlerts();
+    const health=UI.lastDataHealth || {score:0,total:7,pct:0};
+    const all=alertsFor();
+    const card=panel.closest('.card');
+    if(card) card.outerHTML=alertPanelHTML(alerts,health,all);
+  } else if(typeof renderDash==='function'){
+    renderDash();
+  }
+  if(typeof refreshAlertBadges==='function') refreshAlertBadges();
+}
+function dismissAlert(key){
+  UI.alertsDismissed=UI.alertsDismissed||{};
+  UI.alertsDismissed[key]=1;
+  refreshAlertSurface();
+}
+function restoreAlerts(){
+  UI.alertsDismissed={};
+  refreshAlertSurface();
+  toast('Muted alerts restored');
+}
 
 /* ================================================================
    DATA HEALTH  (IMPROVEMENT 11)

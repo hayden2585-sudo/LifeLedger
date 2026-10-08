@@ -59,6 +59,7 @@ function freshState(){
          it is not a percentage
        - 70% of employee NIS is deductible before PAYE is applied            */
     settings:{ currency:'TTD', symbol:'TT$',
+      uiTheme:'modern', uiFont:'system', uiCustomFont:'', uiFontSize:'standard', uiFontWeight:'regular', uiDensity:'comfortable', uiRadius:'modern',
       taxAllowance:90000, taxRate:25,
       nisPct:5.4, nisCeilingMonthly:13600, healthSurchargeWeekly:8.25, payrollDeductionPct:0,
       savingsTargetPct:10, emergencyMonths:4, businessMarginPct:35, minWageHourly:20.50 },
